@@ -1,8 +1,11 @@
 // The preview page: scenario, play count, and device controls around the
 // sandboxed frame, a problems panel fed by the kit's checks and by the
-// frame's CSP and script error reports, and live reload over SSE.
+// frame's CSP and script error reports, and live reload over SSE. Served
+// at /p/<type folder>/<folder>/, so every URL here is relative to that
+// product's prefix.
 
 const elements = {
+    title: document.getElementById('project-title'),
     type: document.getElementById('project-type'),
     scenario: document.getElementById('scenario'),
     scenarioControl: document.getElementById('scenario-control'),
@@ -48,12 +51,12 @@ function selectionQuery() {
 function reloadFrame() {
     state.frameIssues = [];
     state.revision++;
-    elements.frame.src = `/frame?${selectionQuery()}&v=${state.revision}`;
+    elements.frame.src = `frame?${selectionQuery()}&v=${state.revision}`;
 }
 
 async function refreshProblems() {
     try {
-        const response = await fetch(`/__rafflex/problems?${selectionQuery()}`, { cache: 'no-store' });
+        const response = await fetch(`__rafflex/problems?${selectionQuery()}`, { cache: 'no-store' });
         const payload = await response.json();
 
         state.checkIssues = payload.issues ?? [];
@@ -234,11 +237,22 @@ for (const button of elements.deviceButtons) {
 }
 
 async function start() {
-    state.config = await (await fetch('/__rafflex/config')).json();
+    const response = await fetch('__rafflex/config', { cache: 'no-store' });
+
+    if (!response.ok) {
+        elements.summary.textContent = await response.text();
+        elements.problems.dataset.state = 'error';
+
+        return;
+    }
+
+    state.config = await response.json();
 
     const { scenarios, play_count: playCount, type } = state.config;
 
-    elements.type.textContent = `${type}${state.config.offline ? ' · offline' : ''}`;
+    document.title = `${state.config.title} · Rafflex preview`;
+    elements.title.textContent = state.config.title;
+    elements.type.textContent = `${type} ${state.config.version}${state.config.offline ? ' · offline' : ''}`;
     elements.scenario.replaceChildren(...scenarios.map((scenario) => new Option(scenario.label, scenario.value)));
     state.scenario = scenarios.some((scenario) => scenario.value === state.scenario) ? state.scenario : scenarios[0]?.value;
     elements.scenario.value = state.scenario;
@@ -255,7 +269,7 @@ async function start() {
     applyDevice();
     refresh();
 
-    const events = new EventSource('/__rafflex/events');
+    const events = new EventSource('__rafflex/events');
 
     events.addEventListener('reload', () => {
         reloadFrame();

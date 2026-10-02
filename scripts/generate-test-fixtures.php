@@ -71,12 +71,22 @@ foreach ($documents as $name => $document) {
     $versions[$name] = $document['version'];
 }
 
+$published = $contract->manifest();
 $manifest = [
+    'contract' => $published['contract'],
     'version' => substr(hash('sha256', json_encode($versions)), 0, 12),
     'generated_at' => now()->toIso8601String(),
     'endpoints' => $endpoints,
     'versions' => $versions,
 ];
+
+// The workspace additions (PRD 38): asset types and the command list,
+// copied as the marketplace publishes them.
+foreach (['asset_types', 'commands'] as $key) {
+    if (array_key_exists($key, $published)) {
+        $manifest[$key] = $published[$key];
+    }
+}
 
 file_put_contents("{$out}/manifest.json", json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
 

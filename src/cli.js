@@ -1,35 +1,77 @@
+import { commandNamed, devKitCommands } from './command-list.js';
 import { runCheckCommand } from './commands/check.js';
 import { runDevCommand } from './commands/dev.js';
 import { runInitCommand } from './commands/init.js';
+import { runImportCommand } from './commands/import.js';
+import { runNewCommand } from './commands/new.js';
+import { fail } from './commands/output.js';
+import { runPlanCommand } from './commands/plan.js';
+import { runReleaseCommand } from './commands/release.js';
+import { runStatusCommand } from './commands/status.js';
+import { runSyncedCommand } from './commands/synced.js';
+import { runVersionCommand } from './commands/version.js';
 import { kitVersion } from './version.js';
 
-export const usage = `rafflex-dev ${kitVersion}: build and check Rafflex games and blocks locally.
+/**
+ * @param {import('./command-list.js').DevKitCommand} command
+ */
+function usageLine(command) {
+    return `  ${command.usage}\n      ${command.summary}`;
+}
+
+export const usage = `rafflex-dev ${kitVersion}: build, check, and track your Rafflex games and blocks in one workspace.
 
 Usage
-  npx @rafflex/dev init [--type game|block]   Set up a project in this folder
-  npx @rafflex/dev [--port N] [--no-open]     Preview the template with live reload
-  npx @rafflex/dev check [--json] [--play-count N] [--verbose]
-                                              Check every scenario against the platform's rules
+${devKitCommands.map(usageLine).join('\n')}
+
+A <product> is its slug, its folder name, or its path (games/spin-to-win). Inside a
+product folder it defaults to that product.
 
 Options
-  --type game|block   Project type for init (default game)
-  --json              Print the check result as JSON: {passed, issues, warnings, note}
-  --play-count N      Plays per scenario when rendering (default from the rules)
+  --json              Print the result as JSON (every command)
+  --all               check: every product in the workspace
+  --play-count N      check: plays per scenario when rendering (default from the rules)
+  --verbose           check: also list rules the kit cannot apply locally
+  --type game|block   new: the product type, instead of the first argument
+  --force             import: replace an existing product folder
   --port N            Preferred preview port (default 5173, the next free one if taken)
   --no-open           Do not open the browser
-  --verbose           Also list rules the kit cannot apply locally
   -h, --help          Show this help
-  -v, --version       Show the version
+  -v, --version       Show the kit's version
+
+Exit codes: 0 success, 1 a check found blocking problems or a command was refused, 2 usage
+errors or a command that cannot run.
 
 Environment
   RAFFLEX_BASE_URL     Marketplace to read rules from (default https://marketplace.rafflex.io)
   NODE_EXTRA_CA_CERTS  Extra certificate authorities, for a local marketplace or a proxy
 
-The kit only downloads the marketplace's public rules. It never signs in or uploads.
+The kit only downloads the marketplace's public rules and the bundles you import. It never signs in or uploads.
 Docs: https://marketplace.rafflex.io/docs/dev-kit.md`;
 
 /**
- * @typedef {{command: string, type?: string, json: boolean, playCount?: number, port?: number, open: boolean, verbose: boolean, help: boolean, version: boolean}} CliOptions
+ * @typedef {object} CliOptions
+ * @property {string} command          One of the names in command-list.js; "dev" when none is given.
+ * @property {string[]} positionals    Arguments after the command.
+ * @property {boolean} all
+ * @property {boolean} json
+ * @property {string} [type]
+ * @property {number} [playCount]
+ * @property {number} [port]
+ * @property {boolean} open
+ * @property {boolean} verbose
+ * @property {boolean} force
+ * @property {boolean} help
+ * @property {boolean} version
+ */
+
+/**
+ * @typedef {object} CommandContext
+ * @property {string} cwd
+ * @property {NodeJS.WritableStream} stdout
+ * @property {NodeJS.WritableStream} stderr
+ * @property {NodeJS.ReadableStream} stdin   For commands that read a payload (synced).
+ * @property {CliOptions} options
  */
 
 export class UsageError extends Error {}
@@ -40,11 +82,19 @@ export class UsageError extends Error {}
  */
 export function parseArguments(argv) {
     /** @type {CliOptions} */
-    const options = { command: 'dev', json: false, open: true, verbose: false, help: false, version: false };
+    const options = { command: 'dev', positionals: [], all: false, json: false, open: true, verbose: false, force: false, help: false, version: false };
+    /** @type {string[]} */
     const positional = [];
+    let onlyPositionals = false;
 
     for (let index = 0; index < argv.length; index++) {
         const argument = argv[index];
+
+        if (onlyPositionals) {
+            positional.push(argument);
+            continue;
+        }
+
         const [flag, inlineValue] = argument.startsWith('--') ? argument.split(/=(.*)/s, 2) : [argument, undefined];
         const value = () => {
             const next = inlineValue ?? argv[++index];
@@ -66,6 +116,9 @@ export function parseArguments(argv) {
         };
 
         switch (flag) {
+            case '--':
+                onlyPositionals = true;
+                break;
             case '-h':
             case '--help':
                 options.help = true;
@@ -77,11 +130,17 @@ export function parseArguments(argv) {
             case '--json':
                 options.json = true;
                 break;
+            case '--all':
+                options.all = true;
+                break;
             case '--no-open':
                 options.open = false;
                 break;
             case '--verbose':
                 options.verbose = true;
+                break;
+            case '--force':
+                options.force = true;
                 break;
             case '--type':
                 options.type = value();
@@ -93,7 +152,7 @@ export function parseArguments(argv) {
                 options.port = integer();
                 break;
             default:
-                if (argument.startsWith('-')) {
+                if (argument.startsWith('-') && argument !== '-') {
                     throw new UsageError(`Unknown option ${argument}.`);
                 }
 
@@ -101,37 +160,78 @@ export function parseArguments(argv) {
         }
     }
 
-    if (positional.length > 1) {
-        throw new UsageError(`Expected one command, got ${positional.join(' ')}.`);
-    }
+    if (positional.length > 0) {
+        const command = commandNamed(positional[0]);
 
-    if (positional.length === 1) {
-        if (!['init', 'check', 'dev'].includes(positional[0])) {
+        if (command === undefined) {
             throw new UsageError(`Unknown command ${positional[0]}.`);
         }
 
-        options.command = positional[0];
+        options.command = command.name;
+        options.positionals = positional.slice(1);
     }
 
-    if (options.type !== undefined && options.type !== 'game' && options.type !== 'block') {
-        throw new UsageError('--type must be game or block.');
+    const { positionals: { min, max }, usage: usageText } = /** @type {import('./command-list.js').DevKitCommand} */ (commandNamed(options.command));
+
+    if (!options.help && !options.version) {
+        if (options.positionals.length > max) {
+            throw new UsageError(`Too many arguments for ${options.command}: ${options.positionals.join(' ')}. Usage: ${usageText}`);
+        }
+
+        if (options.positionals.length < min) {
+            throw new UsageError(`Missing arguments for ${options.command}. Usage: ${usageText}`);
+        }
+
+        if (options.all && options.command !== 'check') {
+            throw new UsageError('--all only applies to check.');
+        }
+
+        if (options.force && options.command !== 'import') {
+            throw new UsageError('--force only applies to import.');
+        }
+
+        if (options.type !== undefined && options.command !== 'new') {
+            throw new UsageError('--type only applies to new.');
+        }
     }
 
     return options;
 }
 
 /**
+ * Read a readable stream to the end as UTF-8, for commands that take a
+ * payload on standard input (synced reads a get_product result).
+ *
+ * @param {NodeJS.ReadableStream} stream
+ * @returns {Promise<string>}
+ */
+export async function readAll(stream) {
+    let text = '';
+
+    stream.setEncoding?.('utf8');
+
+    for await (const chunk of stream) {
+        text += chunk;
+    }
+
+    return text;
+}
+
+/**
  * Run the CLI and return the exit code: 0 on success, 1 when check finds a
- * blocking issue (or a command fails), 2 for usage errors.
+ * blocking issue or a command is refused, 2 for usage errors and commands
+ * that cannot run. Returns null when a long running command (the preview)
+ * keeps the process alive.
  *
  * @param {string[]} argv
- * @param {{cwd?: string, stdout?: NodeJS.WritableStream, stderr?: NodeJS.WritableStream}} [io]
- * @returns {Promise<number>}
+ * @param {{cwd?: string, stdout?: NodeJS.WritableStream, stderr?: NodeJS.WritableStream, stdin?: NodeJS.ReadableStream}} [io]
+ * @returns {Promise<number|null>}
  */
 export async function main(argv, io = {}) {
     const cwd = io.cwd ?? process.cwd();
     const stdout = io.stdout ?? process.stdout;
     const stderr = io.stderr ?? process.stderr;
+    const stdin = io.stdin ?? process.stdin;
 
     /** @type {CliOptions} */
     let options;
@@ -156,14 +256,31 @@ export async function main(argv, io = {}) {
         return 0;
     }
 
-    const context = { cwd, stdout, stderr, options };
+    /** @type {CommandContext} */
+    const context = { cwd, stdout, stderr, stdin, options };
 
     switch (options.command) {
         case 'init':
             return runInitCommand(context);
+        case 'new':
+            return runNewCommand(context);
         case 'check':
             return runCheckCommand(context);
-        default:
+        case 'status':
+            return runStatusCommand(context);
+        case 'version':
+            return runVersionCommand(context);
+        case 'dev':
             return runDevCommand(context);
+        case 'import':
+            return runImportCommand(context);
+        case 'plan':
+            return runPlanCommand(context);
+        case 'synced':
+            return runSyncedCommand(context);
+        case 'release':
+            return runReleaseCommand(context);
+        default:
+            return fail(context, `Unknown command ${options.command}.`, 2);
     }
 }

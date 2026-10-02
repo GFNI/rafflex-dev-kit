@@ -18,7 +18,7 @@ describe('rules and data from the marketplace', () => {
 
     test('fetches the manifest and documents, caches them, and sends nothing but GETs', async () => {
         const directory = temporaryDirectory();
-        const loaded = await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+        const loaded = await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
 
         assert.equal(loaded.offline, false);
         assert.deepEqual(loaded.warnings, []);
@@ -34,7 +34,7 @@ describe('rules and data from the marketplace', () => {
 
         try {
             await assert.rejects(
-                loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl }),
+                loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl }),
                 (error) => error instanceof RulesUnavailableError && /npx @rafflex\/dev@latest/.test(error.message),
             );
         } finally {
@@ -45,9 +45,9 @@ describe('rules and data from the marketplace', () => {
     test('reuses the cache when the manifest versions match, without refetching documents', async () => {
         const directory = temporaryDirectory();
 
-        await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+        await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
         server.requests.length = 0;
-        await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+        await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
 
         assert.deepEqual(server.requests.map((request) => request.url), ['/dev-kit/manifest.json']);
         assert.match(server.requests[0].ifNoneMatch ?? '', /^".+"$/);
@@ -56,10 +56,10 @@ describe('rules and data from the marketplace', () => {
     test('refreshes a document whose version changed', async () => {
         const directory = temporaryDirectory();
 
-        await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+        await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
         server.changeDocument('rules', (rules) => ({ ...rules, version: 'changed00001', template_max_bytes: 10 }));
 
-        const loaded = await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+        const loaded = await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
 
         assert.equal(loaded.documents.rules.template_max_bytes, 10);
         assert.deepEqual(loaded.warnings, []);
@@ -68,12 +68,12 @@ describe('rules and data from the marketplace', () => {
     test('warns when the cached rules are older than the marketplace and cannot be refreshed', async () => {
         const directory = temporaryDirectory();
 
-        await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+        await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
         server.changeDocument('rules', (rules) => ({ ...rules, version: 'changed00002' }));
         server.failing.add('rules');
 
         try {
-            const loaded = await loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl });
+            const loaded = await loadDocuments({ workspaceDirectory: directory, baseUrl: server.baseUrl });
 
             assert.equal(loaded.documents.rules.version === 'changed00002', false);
             assert.equal(loaded.warnings.length, 1);
@@ -87,10 +87,10 @@ describe('rules and data from the marketplace', () => {
         const directory = temporaryDirectory();
         const offlineServer = await startFixtureServer();
 
-        await loadDocuments({ projectDirectory: directory, baseUrl: offlineServer.baseUrl });
+        await loadDocuments({ workspaceDirectory: directory, baseUrl: offlineServer.baseUrl });
         await offlineServer.close();
 
-        const loaded = await loadDocuments({ projectDirectory: directory, baseUrl: offlineServer.baseUrl });
+        const loaded = await loadDocuments({ workspaceDirectory: directory, baseUrl: offlineServer.baseUrl });
 
         assert.equal(loaded.offline, true);
         assert.ok(loaded.documents.rules.sandbox);
@@ -103,7 +103,7 @@ describe('rules and data from the marketplace', () => {
         await offlineServer.close();
 
         await assert.rejects(
-            loadDocuments({ projectDirectory: temporaryDirectory(), baseUrl: offlineServer.baseUrl }),
+            loadDocuments({ workspaceDirectory: temporaryDirectory(), baseUrl: offlineServer.baseUrl }),
             (error) => error instanceof RulesUnavailableError && /no cached copy of rules\.json/.test(error.message) && /Connect to the internet/.test(error.message),
         );
     });
