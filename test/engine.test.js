@@ -60,6 +60,31 @@ describe('platform pre render checks and caps', () => {
         assert.throws(() => renderTemplate('{{ range(1, 3)|length }}', {}, sandbox), /The range\(\) function is not allowed/);
     });
 
+    test('the range refusals and their messages come from the published rules', () => {
+        assert.deepEqual(Object.keys(sandbox.refusals), ['range_operator', 'range_function']);
+
+        const reworded = {
+            ...sandbox,
+            refusals: { range_function: { ...sandbox.refusals.range_function, message: 'No range() here' } },
+        };
+
+        assert.throws(() => renderTemplate('{{ range(1, 3)|length }}', {}, reworded), (/** @type {any} */ error) => {
+            assert.ok(error instanceof TemplateRenderError);
+            assert.equal(error.message, 'No range() here');
+            assert.equal(error.sandbox, true);
+
+            return true;
+        });
+        assert.equal(renderTemplate('{% set a = [1, 2] %}{{ a|join }}', {}, { ...sandbox, refusals: {} }), '12');
+    });
+
+    test('rules cached before the refusals were published keep the platform wording', () => {
+        const { refusals, ...legacy } = sandbox;
+
+        assert.throws(() => renderTemplate('{% for i in 1..5 %}{% endfor %}', {}, legacy), new RegExp(refusals.range_operator.message.replace(/[().]/g, '\\$&')));
+        assert.throws(() => renderTemplate('{{ range(1, 3)|length }}', {}, legacy), new RegExp(refusals.range_function.message.replace(/[().]/g, '\\$&')));
+    });
+
     test('more for loops than the cap are refused', () => {
         const template = '{% for a in plays %}{% endfor %}'.repeat(sandbox.max_for_loops + 1);
 

@@ -1,5 +1,5 @@
 {
-    "version": "3c4dafdb0c0e",
+    "version": "af540206ecf4",
     "sandbox": {
         "tags": [
             "if",
@@ -41,7 +41,23 @@
         "max_for_loops": 3,
         "max_iterations": 1000,
         "max_total_iterations": 25000,
-        "max_execution_ms": 2000
+        "max_execution_ms": 2000,
+        "refusals": {
+            "range_operator": {
+                "pattern": "\\.\\.\\s*\\w",
+                "flags": "",
+                "js_compatible": true,
+                "message": "Range operator (..) is not allowed in templates",
+                "applies_to": "template_source"
+            },
+            "range_function": {
+                "pattern": "\\brange\\s*\\(",
+                "flags": "",
+                "js_compatible": true,
+                "message": "The range() function is not allowed in templates",
+                "applies_to": "template_source"
+            }
+        }
     },
     "template_max_bytes": 100000,
     "banned_patterns": [
@@ -444,6 +460,8 @@
                 "model": ":filename is larger than the 15 MB limit for 3D model files.",
                 "library": ":filename is larger than the 5 MB limit for library files."
             },
+            "invalid_model": ":filename is not a valid .glb file. Export it from Blender as glTF 2.0, format glTF Binary.",
+            "compressed_model": "Compressed models need decoders the platform does not ship yet. Export without Draco, KTX2, or meshopt compression.",
             "unapproved_library": "This file is not an approved library. Put your own code in the template, or email support@rafflex.io to request a library.",
             "invalid_tag": "Tags use lowercase letters, numbers, and hyphens only."
         }

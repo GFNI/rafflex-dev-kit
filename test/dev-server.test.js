@@ -4,12 +4,34 @@ import { request } from 'node:http';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { startDevServer } from '../src/dev-server.js';
-import { localCspDirectives } from '../src/preview.js';
+import { frameDocument, localCspDirectives } from '../src/preview.js';
 import { loadProject } from '../src/project.js';
 import { fixtureDocuments, glbBuffer, temporaryProject } from './helpers/project.js';
 
 const documents = fixtureDocuments();
 const libraryBytes = readFileSync(new URL('./fixtures/lib/fake-three.module.js', import.meta.url));
+
+describe('frame theme', () => {
+    test('the frame carries the published theme variables and html class, like the studio frame', () => {
+        const { theme } = documents.contexts;
+        const frame = frameDocument({ html: '<p>x</p>', error: null, background: '#111827', theme });
+
+        assert.equal(theme.html_class, 'dark');
+        assert.match(frame, /<html lang="en" class="dark">/);
+        assert.ok(frame.includes(theme.css), 'theme css is injected');
+        assert.ok(frame.includes('--gray-color-950: #030712;'));
+        assert.match(frame, /body \{ background: var\(--gray-color-950\);/);
+    });
+
+    test('a light theme drops the dark class, and contexts without a theme fall back to the sample background', () => {
+        assert.match(frameDocument({ html: '', error: null, theme: { css: ':root { --gray-color-950: #ffffff; }', html_class: '' } }), /<html lang="en">/);
+
+        const legacy = frameDocument({ html: '', error: null, background: '#ffffff' });
+
+        assert.match(legacy, /<html lang="en">/);
+        assert.match(legacy, /body \{ background: #ffffff;/);
+    });
+});
 
 describe('preview CSP', () => {
     test('maps the uploads origin to the local server and keeps the libraries path', () => {
@@ -84,6 +106,7 @@ describe('dev server', () => {
 
         assert.equal(frame.status, 200);
         assert.match(frame.body, /<p>3 plays<\/p>/);
+        assert.ok(frame.body.includes(documents.contexts.theme.css), 'the frame carries the theme variables');
         assert.match(frame.body, /<img src="\/assets\/background\.png">/);
         assert.match(frame.body, new RegExp(`import \\* as THREE from "${documents.libraries.libraries[0].url.replace(/[.]/g, '\\.')}"`));
         assert.match(csp, /^sandbox allow-scripts; default-src 'none'/);

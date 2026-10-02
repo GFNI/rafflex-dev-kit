@@ -120,6 +120,23 @@ describe('glb validation', () => {
         assert.equal(glbRefusal(glbBuffer({ asset: { version: '2.0' }, extensionsUsed: ['KHR_draco_mesh_compression'] })), 'compressed_model');
     });
 
+    test('scanAssets reports model refusals with the published messages', () => {
+        const directory = temporaryProject({ assets: { 'prize-box.glb': 'nope', 'packed.glb': glbBuffer({ asset: { version: '2.0' }, extensionsRequired: ['EXT_meshopt_compression'] }) } });
+        const published = { ...rules, upload_rules: { ...rules.upload_rules, refusals: { ...rules.upload_rules.refusals, invalid_model: 'Not a model: :filename', compressed_model: 'Too squashed.' } } };
+        const scan = scanAssets(join(directory, 'assets'), published, [], urlFor);
+
+        assert.deepEqual(scan.refusals.map((refusal) => refusal.message).sort(), ['Not a model: prize-box.glb', 'Too squashed.']);
+    });
+
+    test('rules cached before the model refusals were published keep the platform wording', () => {
+        const { invalid_model: invalidModel, compressed_model: compressedModel, ...legacyRefusals } = rules.upload_rules.refusals;
+        const legacy = { ...rules, upload_rules: { ...rules.upload_rules, refusals: legacyRefusals } };
+        const directory = temporaryProject({ assets: { 'prize-box.glb': 'nope' } });
+
+        assert.equal(scanAssets(join(directory, 'assets'), legacy, [], urlFor).refusals[0].message, invalidModel.replace(':filename', 'prize-box.glb'));
+        assert.ok(compressedModel.startsWith('Compressed models'));
+    });
+
     test('scanAssets reports an invalid model with the platform wording', () => {
         const directory = temporaryProject({ assets: { 'prize-box.glb': 'nope', 'ok.glb': glbBuffer() } });
         const scan = scanAssets(join(directory, 'assets'), rules, [], urlFor);

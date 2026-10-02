@@ -139,10 +139,9 @@ function fillMessage(template, replacements) {
 const compressionExtensions = ['KHR_draco_mesh_compression', 'KHR_texture_basisu', 'EXT_meshopt_compression'];
 
 /**
- * The platform's .glb refusals (MediaUploadRules::modelRefusal). The rules
- * document does not publish these two yet, so the kit carries the
- * platform's wording as a fallback and prefers a published message when
- * one appears under the same key.
+ * The platform's .glb refusals (MediaUploadRules::modelRefusal), published
+ * as upload_rules.refusals.invalid_model and compressed_model. These are
+ * used only when cached rules predate those two keys.
  *
  * @type {Record<string, string>}
  */

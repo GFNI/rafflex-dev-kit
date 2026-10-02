@@ -42,7 +42,27 @@ export class TemplateRenderError extends Error {
  * @property {number} max_iterations
  * @property {number} [max_total_iterations]
  * @property {number} max_execution_ms
+ * @property {Record<string, PreRenderRefusal>} [refusals]
  */
+
+/**
+ * A pattern the platform refuses before rendering, matched against the raw
+ * template source, with the message the render fails with
+ * (TwigRenderer::PreRenderRefusals, published as rules.sandbox.refusals).
+ *
+ * @typedef {{pattern: string, flags?: string, message: string}} PreRenderRefusal
+ */
+
+/**
+ * The platform's range refusals, used only when cached rules predate
+ * rules.sandbox.refusals.
+ *
+ * @type {Record<string, PreRenderRefusal>}
+ */
+const fallbackPreRenderRefusals = {
+    range_operator: { pattern: '\\.\\.\\s*\\w', flags: '', message: 'Range operator (..) is not allowed in templates' },
+    range_function: { pattern: '\\brange\\s*\\(', flags: '', message: 'The range() function is not allowed in templates' },
+};
 
 /** @type {any} */
 let Markup = null;
@@ -543,12 +563,10 @@ function limitCollections(value, maxIterations) {
  * @param {SandboxRules} sandbox
  */
 function validateTemplate(template, sandbox) {
-    if (/\.\.\s*\w/.test(template)) {
-        throw new TemplateRenderError('Range operator (..) is not allowed in templates', { sandbox: true });
-    }
-
-    if (/\brange\s*\(/.test(template)) {
-        throw new TemplateRenderError('The range() function is not allowed in templates', { sandbox: true });
+    for (const refusal of Object.values(sandbox.refusals ?? fallbackPreRenderRefusals)) {
+        if (new RegExp(refusal.pattern, (refusal.flags ?? '').replace('g', '')).test(template)) {
+            throw new TemplateRenderError(refusal.message, { sandbox: true });
+        }
     }
 
     const forLoopCount = (template.match(/\{%-?~?\s*for\b/g) ?? []).length;

@@ -112,24 +112,48 @@ window.addEventListener('error', function (event) {
 `;
 
 /**
+ * The frame's stylesheet. With the published theme (contexts.theme) it is
+ * the platform frame's: the sample tenant's CSS variables on :root and a
+ * gray 950 body. Contexts cached before the theme was published fall back
+ * to the sample `settings.background`.
+ *
+ * @param {{css?: unknown, html_class?: unknown}|undefined} theme
+ * @param {unknown} background
+ * @returns {{htmlClass: string, css: string}}
+ */
+export function frameStyles(theme, background) {
+    if (typeof theme?.css === 'string') {
+        return {
+            htmlClass: typeof theme.html_class === 'string' ? theme.html_class : '',
+            css: `${theme.css.replace(/<\//g, '<\\/')} :root.dark { color-scheme: dark; } body { background: var(--gray-color-950); font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'; -webkit-font-smoothing: antialiased; }`,
+        };
+    }
+
+    return {
+        htmlClass: isDark(background) ? 'dark' : '',
+        css: `:root.dark { color-scheme: dark; } body { background: ${typeof background === 'string' && /^#[0-9a-f]{3,8}$/i.test(background) ? background : '#030712'}; font-family: ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }`,
+    };
+}
+
+/**
  * The frame document around the rendered template, or around the render
  * error the way the platform's frame shows one.
  *
- * @param {{html: string|null, error: string|null, background?: unknown}} content
+ * @param {{html: string|null, error: string|null, background?: unknown, theme?: {css?: unknown, html_class?: unknown}}} content
  */
-export function frameDocument({ html, error, background }) {
-    const dark = isDark(background);
+export function frameDocument({ html, error, background, theme }) {
+    const styles = frameStyles(theme, background);
     const body = error !== null
         ? `<div style="margin: 16px; padding: 12px 16px; border: 1px solid #ef4444; border-radius: 6px; background: #fef2f2; color: #b91c1c; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;"><strong>Preview error:</strong> ${escapeHtml(error)}</div>`
         : html;
 
     return `<!DOCTYPE html>
-<html lang="en"${dark ? ' class="dark"' : ''}>
+<html lang="en"${styles.htmlClass === '' ? '' : ` class="${escapeHtml(styles.htmlClass)}"`}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Preview</title>
-<style>:root.dark { color-scheme: dark; } body { background: ${typeof background === 'string' && /^#[0-9a-f]{3,8}$/i.test(background) ? background : '#030712'}; font-family: ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }</style>
+<style>${styles.css}</style>
 <script>${frameReporter}</script>
 <script defer src="/__rafflex/alpine.js"></script>
 </head>

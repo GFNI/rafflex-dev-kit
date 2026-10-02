@@ -3,12 +3,14 @@
  * injected and the template's toggles resolved into `options`, as the
  * platform builds a preview or check context.
  *
- * contexts.json keeps game contexts small: each carries only the game
- * variables (user, settings, plays, play_count, win_count). The platform's
- * check renders a game with the whole data contract, so for checks and the
- * preview the kit adds the catalogue variables from the block context,
- * which do not vary by scenario. The fixture parity suite uses the
- * published contexts exactly as they are (see rawFixtureContext).
+ * contexts.json publishes the catalogue both types render with (the
+ * platform's preview and check give a game the whole data contract) once
+ * under `shared`; each game context carries only what its scenario and play
+ * count change (plays, play_count, win_count) and the block context only
+ * the block's own variables. A context is `shared` merged with the game or
+ * block context, then files and options. Rules cached before `shared` was
+ * published carry the catalogue in the block context instead, so that
+ * stands in for it.
  */
 
 const toggleNamePattern = /^(?:show_|hide_|enable_|is_|has_)|_enabled$/;
@@ -98,6 +100,16 @@ function optionsValue(toggles) {
 }
 
 /**
+ * The catalogue variables both types render with.
+ *
+ * @param {any} contexts
+ * @returns {Record<string, unknown>}
+ */
+function sharedContext(contexts) {
+    return contexts.shared ?? contexts.block?.context ?? {};
+}
+
+/**
  * A game scenario's context at a play count (the nearest available one
  * when contexts.json does not carry that count), with the catalogue
  * variables, files, and options.
@@ -113,7 +125,7 @@ export function gameContext(contexts, { scenario, playCount, files, template }) 
     }
 
     return {
-        ...(contexts.block?.context ?? {}),
+        ...sharedContext(contexts),
         ...contexts.game[scenario][String(count)],
         files: filesValue(files),
         options: optionsValue(inferToggleDefaults(template, contexts.block?.options_defaults?.toggle_unset)),
@@ -128,6 +140,7 @@ export function gameContext(contexts, { scenario, playCount, files, template }) 
  */
 export function blockContext(contexts, { files, template }) {
     return {
+        ...(contexts.shared ?? {}),
         ...(contexts.block?.context ?? {}),
         files: filesValue(files),
         options: optionsValue(inferToggleDefaults(template, contexts.block?.options_defaults?.toggle_unset)),
@@ -135,8 +148,9 @@ export function blockContext(contexts, { files, template }) {
 }
 
 /**
- * A fixture's context exactly as the platform rendered it: the published
- * context for its type, scenario, and play count, plus its files map.
+ * A fixture's context exactly as the platform rendered it: the shared
+ * catalogue merged with the published context for its type, scenario, and
+ * play count, plus its files map.
  *
  * @param {any} contexts
  * @param {{type: string, scenario: string|null, play_count: number|null, files: Record<string, string>|unknown[]}} fixture
@@ -146,5 +160,5 @@ export function rawFixtureContext(contexts, fixture) {
         ? contexts.block.context
         : contexts.game[String(fixture.scenario)][String(fixture.play_count)];
 
-    return { ...base, files: filesValue(fixture.files) };
+    return { ...(contexts.shared ?? {}), ...base, files: filesValue(fixture.files) };
 }

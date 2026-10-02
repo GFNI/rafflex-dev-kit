@@ -1,6 +1,6 @@
 {
-    "version": "ece63c5238af",
-    "generated_at": "2026-10-02T20:46:18+00:00",
+    "version": "224645977332",
+    "generated_at": "2026-10-02T21:05:05+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
@@ -9,8 +9,8 @@
         "fixtures": "__BASE_URL__/dev-kit/fixtures.json"
     },
     "versions": {
-        "rules": "3c4dafdb0c0e",
-        "contexts": "3c63cf3ae042",
+        "rules": "af540206ecf4",
+        "contexts": "cbf0c3ba030a",
         "skeletons": "7293b372ca3a",
         "libraries": "767969e7fbfc",
         "fixtures": "a279b471bc1e"

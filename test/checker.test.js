@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { compilePatterns, decodeEscapes, matchPatterns } from '../src/banned-patterns.js';
 import { isBlocking, referencedFileKeys, runChecks } from '../src/checker.js';
-import { gameContext, inferToggleDefaults } from '../src/context.js';
+import { blockContext, gameContext, inferToggleDefaults, rawFixtureContext } from '../src/context.js';
 import { moduleSpecifiers, scanScripts, sourceScriptViolations } from '../src/script-rules.js';
 import { fixtureDocuments } from './helpers/project.js';
 
@@ -179,6 +179,37 @@ describe('contexts', () => {
         assert.ok(Array.isArray(withFiles.competitions.all));
         assert.deepEqual(without.files, []);
         assert.equal(without.play_count, 0);
+    });
+
+    test('a game context is the shared catalogue merged with only what its scenario changes', () => {
+        const context = gameContext(documents.contexts, { scenario: 'big_win', playCount: 7, files: {}, template: '' });
+
+        assert.deepEqual(Object.keys(documents.contexts.game.big_win['7']), ['plays', 'play_count', 'win_count']);
+
+        for (const [variable, value] of Object.entries(documents.contexts.shared)) {
+            assert.deepEqual(context[variable], value, variable);
+        }
+
+        assert.deepEqual(context.plays, documents.contexts.game.big_win['7'].plays);
+    });
+
+    test('a block context is the shared catalogue with the block variables, files, and options', () => {
+        const context = blockContext(documents.contexts, { files, template: '{{ options.show_title|default(true) }}' });
+
+        assert.deepEqual(context.competitions, documents.contexts.shared.competitions);
+        assert.deepEqual(context.options, { show_title: true });
+        assert.deepEqual(context.files, files);
+        assert.equal(context.plays, undefined);
+    });
+
+    test('contexts cached before shared was published borrow the catalogue from the block context', () => {
+        const { shared, ...legacy } = documents.contexts;
+        const legacyContexts = { ...legacy, block: { ...legacy.block, context: { ...shared, options: [] } } };
+        const context = gameContext(legacyContexts, { scenario: 'mixed', playCount: 5, files: {}, template: '' });
+
+        assert.deepEqual(context.competitions, shared.competitions);
+        assert.equal(context.play_count, 5);
+        assert.deepEqual(rawFixtureContext(legacyContexts, { type: 'game', scenario: 'mixed', play_count: 5, files: [] }).competitions, undefined);
     });
 
     test('toggles resolve to their literal default or the published unset value', () => {

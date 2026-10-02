@@ -218,7 +218,7 @@ export async function startDevServer({ project, loaded, port, host = '127.0.0.1'
 
         const directives = localCspDirectives(documents.rules.preview_csp ?? {}, origin, libraryUrls);
 
-        send(response, 200, frameDocument({ html, error, background: context.settings?.background }), {
+        send(response, 200, frameDocument({ html, error, background: context.settings?.background, theme: documents.contexts.theme }), {
             'Content-Type': 'text/html; charset=utf-8',
             'Content-Security-Policy': cspHeader(directives),
             'Referrer-Policy': 'no-referrer',
