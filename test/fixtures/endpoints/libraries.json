@@ -1,0 +1,14 @@
+{
+    "version": "767969e7fbfc",
+    "libraries": [
+        {
+            "name": "three.js",
+            "version": "0.0.0-test",
+            "url": "https://static.rafflex.io/marketplace/libraries/three/0.0.0-test/three.module.min.js",
+            "sha256": "b268382400dce35b53383f3e2e35162cf8b8ad8e14db28fc4898884336d3f0c6",
+            "licence": "MIT",
+            "contents": "Test stand in for the three.js bundle",
+            "default_tag": "three"
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+<script>
+const plays = {{ plays|json }};
+const files = {{ files|json }};
+const settings = {{ settings|json }};
+const text = {{ "Tom's <b>\"quoted\"</b> & café £5 / 😀 \\ end"|json }};
+const nums = {{ [1, 2.5, -3, 0, 1000000]|json }};
+const flags = {{ [true, false, null]|json }};
+const empty = {{ []|json }};
+const mapped = {{ {a: 1, "b-c": "x/y"}|json }};
+const user = {{ user|json }};
+</script>

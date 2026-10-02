@@ -1,0 +1,10 @@
+<ul>
+{% for play in plays %}
+  <li class="{{ play.won ? 'win' : 'lose' }}">#{{ loop.index }} {{ play.ticket_number }}{% if play.won %} {{ play.prize.name|upper }} ({{ play.prize.value_raw|number_format(2) }}){% endif %}</li>
+{% endfor %}
+</ul>
+<p>{{ settings.site_name|lower }} {{ settings.site_name|length }} {{ settings.site_name|slice(0, 6) }}</p>
+<p>{{ competitions.all|length }} {{ (competitions.all|first).title }} {{ (competitions.all|last).slug }}</p>
+<p>{{ ["a", "b", "c"]|join(", ") }} {{ "  padded  "|trim }} {{ 3.14159|round(2) }} {{ 2.5|round }} {{ 1234567.891|number_format(2, '.', ',') }}</p>
+<p>{{ "<b>bold</b> & 'quote'" }} {{ "<i>x</i>"|escape }} {{ "2026-01-15 10:30:00"|date("Y-m-d") }} {{ "2026-01-15 10:30:00"|date("D, d M Y H:i") }}</p>
+<p>win_count={{ win_count }} play_count={{ play_count }}</p>

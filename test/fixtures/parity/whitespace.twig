@@ -1,0 +1,14 @@
+<div>
+    {% if play_count > 0 %}
+        <span>{{ play_count }}</span>
+    {% endif %}
+    {%- if play_count > 0 -%}
+        <b>trimmed</b>
+    {%- endif -%}
+    {# a comment #}
+    {% for item in plays|slice(0, 2) %}
+    <i>{{ item.ticket_number }}</i>
+    {% else %}
+    <i>none</i>
+    {% endfor %}
+</div>

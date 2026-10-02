@@ -1,0 +1,8 @@
+{% set price = 2.99 %}
+{% set total = price * 3 %}
+<p>{{ price }} {{ total }} {{ 10 / 4 }} {{ 7 // 2 }} {{ 7 % 3 }} {{ 0.1 + 0.2 }}</p>
+<p>[{{ true }}] [{{ false }}] [{{ null }}] [{{ user.is_logged_in }}]</p>
+<p>{{ user.name ~ " " ~ user.last_name }} {{ user.balance_raw }}</p>
+{% if plays is empty %}<p>no plays</p>{% else %}<p>{{ plays|length }} plays</p>{% endif %}
+{% if user.name starts with "Al" %}<p>starts</p>{% endif %}
+{% if "Tech" in competitions.all|first.categories %}<p>tech</p>{% endif %}

@@ -1,0 +1,37 @@
+{
+  "name": "@rafflex/dev",
+  "version": "0.1.0",
+  "description": "Build, preview, and check Rafflex marketplace games and blocks locally, with the platform's own rules.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "rafflex-dev": "bin/rafflex-dev.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:parity": "node --test test/parity.live.js"
+  },
+  "keywords": [
+    "rafflex",
+    "twig",
+    "preview",
+    "dev-server"
+  ],
+  "homepage": "https://marketplace.rafflex.io/docs/dev-kit.md",
+  "dependencies": {
+    "alpinejs": "^3.17.4",
+    "twig": "^2.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

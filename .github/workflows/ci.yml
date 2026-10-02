@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Daily, so a rule or renderer change on the marketplace that twig.js
+    # cannot follow shows up even without a kit commit.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  parity:
+    # Enable by setting the repository variable RAFFLEX_PARITY to "true".
+    # RAFFLEX_PARITY_BASE_URL overrides the marketplace (production by default).
+    if: vars.RAFFLEX_PARITY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:parity
+        env:
+          RAFFLEX_BASE_URL: ${{ vars.RAFFLEX_PARITY_BASE_URL || 'https://marketplace.rafflex.io' }}

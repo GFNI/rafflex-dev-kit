@@ -1,0 +1,7 @@
+<section class="rfx-grid">
+{% for competition in competitions.ending_soon|slice(0, options.limit|default(3)) %}
+    <a href="{{ competition.url }}"><img src="{{ competition.image_url }}" alt="{{ competition.title }}"> {{ competition.title }} {{ competition.price }} {{ competition.percent_sold }}%</a>
+{% endfor %}
+{% for category in categories %}{{ category.name }}:{{ category.competitions|length }} {% endfor %}
+<img src="{{ files['logo'] }}" alt="">
+</section>

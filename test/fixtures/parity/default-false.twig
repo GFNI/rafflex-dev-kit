@@ -1,0 +1,8 @@
+{% set toggles = {on: true, off: false, blank: "", nothing: null, list: []} %}
+on={{ toggles.on|default("d") ? "yes" : "no" }}
+off={{ toggles.off|default(true) ? "yes" : "no" }}
+blank={{ toggles.blank|default("fallback") }}
+nothing={{ toggles.nothing|default("fallback") }}
+list={{ toggles.list|default("fallback") }}
+missing={{ toggles.missing|default("fallback") }}
+option={{ options.show_title|default(true) ? "shown" : "hidden" }}

@@ -1,0 +1,496 @@
+{
+    "version": "3c4dafdb0c0e",
+    "sandbox": {
+        "tags": [
+            "if",
+            "for",
+            "set"
+        ],
+        "filters": [
+            "upper",
+            "lower",
+            "date",
+            "number_format",
+            "default",
+            "length",
+            "first",
+            "last",
+            "join",
+            "slice",
+            "round",
+            "trim",
+            "escape",
+            "json"
+        ],
+        "tests": [
+            "even",
+            "odd",
+            "defined",
+            "same as",
+            "none",
+            "null",
+            "divisible by",
+            "constant",
+            "empty",
+            "iterable",
+            "sequence",
+            "mapping",
+            "true"
+        ],
+        "functions": [],
+        "max_for_loops": 3,
+        "max_iterations": 1000,
+        "max_total_iterations": 25000,
+        "max_execution_ms": 2000
+    },
+    "template_max_bytes": 100000,
+    "banned_patterns": [
+        {
+            "key": "fetch",
+            "pattern": "\\bfetch\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "External network calls are not allowed (fetch).",
+            "source_only": false
+        },
+        {
+            "key": "xml_http_request",
+            "pattern": "\\bXMLHttpRequest\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "External network calls are not allowed (XMLHttpRequest).",
+            "source_only": false
+        },
+        {
+            "key": "web_socket",
+            "pattern": "\\bWebSocket\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "External network calls are not allowed (WebSocket).",
+            "source_only": false
+        },
+        {
+            "key": "send_beacon",
+            "pattern": "\\bsendBeacon\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "External network calls are not allowed (sendBeacon).",
+            "source_only": false
+        },
+        {
+            "key": "event_source",
+            "pattern": "\\bEventSource\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "External network calls are not allowed (EventSource).",
+            "source_only": false
+        },
+        {
+            "key": "webrtc",
+            "pattern": "\\bRTC[A-Z][A-Za-z]*\\b",
+            "flags": "",
+            "js_compatible": true,
+            "message": "WebRTC is not allowed (RTCPeerConnection and related APIs).",
+            "source_only": false
+        },
+        {
+            "key": "navigator",
+            "pattern": "\\bnavigator\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "The navigator object is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "dynamic_import",
+            "pattern": "\\bimport\\s*\\(",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Dynamic script imports are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "import_meta",
+            "pattern": "\\bimport\\s*\\.\\s*meta\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "import.meta is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "document_cookie",
+            "pattern": "document\\s*\\.\\s*cookie",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Reading or writing cookies is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "browser_storage",
+            "pattern": "\\b(?:localStorage|sessionStorage|indexedDB)\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Browser storage access is not allowed (localStorage, sessionStorage, indexedDB).",
+            "source_only": false
+        },
+        {
+            "key": "global_location",
+            "pattern": "(?:window|document|top|parent)\\s*\\.\\s*location",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Redirecting the page is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "location_assignment",
+            "pattern": "\\blocation\\s*\\.\\s*(?:href|replace|assign)",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Redirecting the page is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "meta_refresh",
+            "pattern": "<meta[^>]+http-equiv\\s*=\\s*[\"']?\\s*refresh",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Meta refresh redirects are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "window_open",
+            "pattern": "window\\s*\\.\\s*open\\s*\\(",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Opening new windows is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "form_element",
+            "pattern": "<form\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Form elements are not allowed; game entry flows through the platform, and inputs bound to Alpine state cover interactive needs.",
+            "source_only": false
+        },
+        {
+            "key": "formaction_attribute",
+            "pattern": "\\bformaction\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "The formaction attribute is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "link_element",
+            "pattern": "<link\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "<link> tags are not allowed; ship styles inline instead of loading them.",
+            "source_only": false
+        },
+        {
+            "key": "ping_attribute",
+            "pattern": "<[a-z][^>]*[\\s\\/]ping\\s*=",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "The ping attribute is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "css_import",
+            "pattern": "@import\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "CSS @import is not allowed; ship styles inline.",
+            "source_only": false
+        },
+        {
+            "key": "password_input",
+            "pattern": "type\\s*=\\s*[\"']?\\s*password",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Password inputs are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "payment_card_input",
+            "pattern": "autocomplete\\s*=\\s*[\"']?\\s*cc-",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Payment card inputs are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "eval",
+            "pattern": "\\beval\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Obfuscated or dynamically evaluated code is not allowed (eval).",
+            "source_only": false
+        },
+        {
+            "key": "function_constructor",
+            "pattern": "\\bFunction\\b",
+            "flags": "",
+            "js_compatible": true,
+            "message": "Obfuscated or dynamically evaluated code is not allowed (Function).",
+            "source_only": false
+        },
+        {
+            "key": "base64_codec",
+            "pattern": "\\batob\\b|\\bbtoa\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Encoded script payloads are not allowed (atob/btoa).",
+            "source_only": false
+        },
+        {
+            "key": "from_char_code",
+            "pattern": "fromCharCode",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Encoded script payloads are not allowed (fromCharCode).",
+            "source_only": false
+        },
+        {
+            "key": "constructor_access",
+            "pattern": "(?:\\.|\\[)\\s*[\"'`]?\\s*constructor\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Constructor access is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "proto_access",
+            "pattern": "__proto__",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Prototype access is not allowed (__proto__).",
+            "source_only": false
+        },
+        {
+            "key": "reflect",
+            "pattern": "\\bReflect\\b",
+            "flags": "",
+            "js_compatible": true,
+            "message": "Reflect is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "document_write",
+            "pattern": "document\\s*\\.\\s*write",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Writing to the document stream is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "embedded_frame",
+            "pattern": "<(?:iframe|object|embed)\\b",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Embedding iframes, objects, or embeds is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "javascript_url",
+            "pattern": "javascript\\s*:",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "javascript: URLs are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "srcdoc_attribute",
+            "pattern": "\\bsrcdoc\\s*=",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Inline frame documents are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "data_html",
+            "pattern": "data:\\s*text\\/html",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "data:text/html payloads are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "data_link",
+            "pattern": "\\bhref\\s*=\\s*[\"']?\\s*data:",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "data: URLs in links are not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "computed_global_access",
+            "pattern": "\\b(?:window|globalThis|self|top|parent|frames|document)\\s*\\[",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Computed property access on global objects is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "computed_api_access",
+            "pattern": "\\[\\s*[\"'`](?:fetch|XMLHttpRequest|WebSocket|sendBeacon|EventSource|eval|Function|atob|btoa|cookie|localStorage|sessionStorage|indexedDB|location|write|open|import|constructor)[\"'`]\\s*\\]",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Computed access to restricted browser APIs is not allowed.",
+            "source_only": false
+        },
+        {
+            "key": "external_url",
+            "pattern": "\\bhttps?:\\/\\/",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Hardcoded external http(s) URLs are not allowed. Upload media to your product and reference it with {{ files['background'] }}.",
+            "source_only": false
+        },
+        {
+            "key": "protocol_relative_url",
+            "pattern": "(?:^|[\\s,=('\"`])\\/\\/(?:\\[[0-9a-f:.]+\\]|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|0x[0-9a-f]+(?![\\w.-])|\\d+(?![\\w.-]))",
+            "flags": "im",
+            "js_compatible": true,
+            "message": "Protocol-relative URLs (//domain) are not allowed. Upload media to your product and reference it with {{ files['background'] }}.",
+            "source_only": false
+        },
+        {
+            "key": "hex_escape",
+            "pattern": "\\\\x[0-9a-f]{2}",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Hex escape sequences are not allowed (\\x..).",
+            "source_only": true
+        },
+        {
+            "key": "unicode_escape",
+            "pattern": "\\\\u\\{?[0-9a-f]{4}",
+            "flags": "i",
+            "js_compatible": true,
+            "message": "Unicode escape sequences are not allowed (\\u....).",
+            "source_only": true
+        }
+    ],
+    "script_rules": {
+        "messages": {
+            "script_source": "Scripts may load only an approved library through files, for example src=\"{{ files['three'] }}\". Put your own code inline.",
+            "module_import": "Import approved libraries by their files URL, for example import * as THREE from \"{{ files['three'] }}\". Bare imports and other URLs are not allowed.",
+            "import_map": "Import maps are not allowed. Import the approved library by its files URL instead.",
+            "dynamic_import": "Dynamic script imports are not allowed."
+        },
+        "source_attributes": [
+            "src",
+            "href",
+            "xlink:href"
+        ]
+    },
+    "messages": {
+        "too_large": "The template is too large (maximum 100 KB).",
+        "rendered_output_prefix": "In the rendered output: ",
+        "sandbox_failure_prefix": "The template does not pass the Twig sandbox: "
+    },
+    "issue_codes": {
+        "safety": "Remove the flagged code. Keep JavaScript and CSS inline and reference media only through the files map.",
+        "rendered_output": "Twig assembles this pattern at render time. Change the Twig logic so the rendered page no longer contains it.",
+        "sandbox": "Use only the sandbox tags (if, for, set) and allowed filters, no functions or range operator, and stay within the loop and time limits.",
+        "render_error": "Fix the Twig error at the reported line. The template must render in every play scenario, including no plays.",
+        "option_warning": "Adjust the options declaration so site owners get the intended field.",
+        "unknown_file_tag": "Upload a file with this tag or change the reference to an existing tag.",
+        "too_large": "Shrink the template below the size limit, for example by moving inline images and audio into uploaded media."
+    },
+    "upload_rules": {
+        "extensions": [
+            "png",
+            "jpg",
+            "jpeg",
+            "webp",
+            "gif",
+            "mp3",
+            "glb",
+            "js"
+        ],
+        "kinds_by_extension": {
+            "png": "image",
+            "jpg": "image",
+            "jpeg": "image",
+            "webp": "image",
+            "gif": "image",
+            "mp3": "audio",
+            "glb": "model",
+            "js": "library"
+        },
+        "max_bytes_by_kind": {
+            "image": 5242880,
+            "audio": 5242880,
+            "model": 15728640,
+            "library": 5242880
+        },
+        "max_tag_length": 64,
+        "tag_pattern": {
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "flags": "",
+            "js_compatible": true
+        },
+        "refusals": {
+            "blend": "Browsers cannot load .blend files. Export from Blender as .glb (File > Export > glTF 2.0, format glTF Binary).",
+            "gltf": "Upload a single .glb instead: .gltf files reference separate files the files map cannot express.",
+            "unsupported_type": ":filename is not a file type the media library accepts. Allowed types: png, jpg, jpeg, webp, gif, mp3, glb, js.",
+            "too_large": {
+                "image": ":filename is larger than the 5 MB limit for image files.",
+                "audio": ":filename is larger than the 5 MB limit for audio files.",
+                "model": ":filename is larger than the 15 MB limit for 3D model files.",
+                "library": ":filename is larger than the 5 MB limit for library files."
+            },
+            "unapproved_library": "This file is not an approved library. Put your own code in the template, or email support@rafflex.io to request a library.",
+            "invalid_tag": "Tags use lowercase letters, numbers, and hyphens only."
+        }
+    },
+    "preview_csp": {
+        "sandbox": [
+            "allow-scripts"
+        ],
+        "default-src": [
+            "'none'"
+        ],
+        "script-src": [
+            "'self'",
+            "'unsafe-inline'",
+            "'unsafe-eval'",
+            "https://marketplace.rafflex.io.test/storage/libraries/"
+        ],
+        "style-src": [
+            "'self'",
+            "'unsafe-inline'"
+        ],
+        "img-src": [
+            "'self'",
+            "data:",
+            "blob:",
+            "https://marketplace.rafflex.io.test"
+        ],
+        "font-src": [
+            "'self'",
+            "data:"
+        ],
+        "media-src": [
+            "'self'",
+            "https://marketplace.rafflex.io.test"
+        ],
+        "connect-src": [
+            "https://marketplace.rafflex.io.test",
+            "blob:"
+        ],
+        "frame-ancestors": [
+            "'self'"
+        ],
+        "form-action": [
+            "'none'"
+        ],
+        "base-uri": [
+            "'none'"
+        ]
+    }
+}
