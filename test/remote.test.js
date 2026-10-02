@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { loadDocuments, resolveBaseUrl, RulesUnavailableError } from '../src/remote.js';
+import { loadDocuments, resolveBaseUrl, RulesUnavailableError, SupportedContract } from '../src/remote.js';
 import { startFixtureServer } from './helpers/fixture-server.js';
 import { temporaryDirectory } from './helpers/project.js';
 
@@ -25,6 +25,21 @@ describe('rules and data from the marketplace', () => {
         assert.deepEqual(Object.keys(loaded.documents), ['rules', 'contexts', 'skeletons', 'libraries']);
         assert.ok(existsSync(join(loaded.cacheDirectory, 'rules.json')));
         assert.ok(server.requests.every((request) => request.method === 'GET' && request.headers.authorization === undefined && request.headers.cookie === undefined));
+    });
+
+    test('refuses a rules contract newer than the kit understands', async () => {
+        const directory = temporaryDirectory();
+
+        server.changeManifest((manifest) => ({ ...manifest, contract: SupportedContract + 1, version: 'contract-next' }));
+
+        try {
+            await assert.rejects(
+                loadDocuments({ projectDirectory: directory, baseUrl: server.baseUrl }),
+                (error) => error instanceof RulesUnavailableError && /npx @rafflex\/dev@latest/.test(error.message),
+            );
+        } finally {
+            server.changeManifest((manifest) => ({ ...manifest, contract: SupportedContract }));
+        }
     });
 
     test('reuses the cache when the manifest versions match, without refetching documents', async () => {

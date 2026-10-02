@@ -79,6 +79,12 @@ export async function startFixtureServer() {
             manifest.version = `${manifest.version}-changed`;
             overrides.manifest = JSON.stringify(manifest);
         },
+        /**
+         * @param {(manifest: any) => any} change
+         */
+        changeManifest(change) {
+            overrides.manifest = JSON.stringify(change(JSON.parse(documentBody('manifest'))));
+        },
         close: () => new Promise((resolve) => {
             server.closeAllConnections();
             server.close(resolve);

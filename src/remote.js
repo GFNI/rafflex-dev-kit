@@ -15,6 +15,9 @@ export const projectDocuments = ['rules', 'contexts', 'skeletons', 'libraries'];
 
 const requestTimeoutMs = 15000;
 
+/** The newest manifest `contract` this kit understands. Contract changes are additive until this bumps. */
+export const SupportedContract = 1;
+
 export class RulesUnavailableError extends Error {
     /**
      * @param {string} message
@@ -177,6 +180,10 @@ export async function loadDocuments({ projectDirectory, baseUrl, names = project
         warnings.push(`Working offline with the cached rules${fetchedAt}: could not reach ${baseUrl} (${describeError(error)}).`);
 
         return { documents, manifest: cached('manifest'), warnings, offline: true, baseUrl, cacheDirectory };
+    }
+
+    if (typeof manifest?.contract === 'number' && manifest.contract > SupportedContract) {
+        throw new RulesUnavailableError(`The marketplace publishes rules contract ${manifest.contract}, newer than this kit understands (${SupportedContract}). Run npx @rafflex/dev@latest to update.`);
     }
 
     /** @type {string[]} */
