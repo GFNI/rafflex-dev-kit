@@ -362,7 +362,6 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
     const listeners = new Map();
     let actualPort = port;
     let origin = `http://${host}:${port}`;
-    const libraryUrls = (documents.libraries?.libraries ?? []).map((/** @type {{url: string}} */ library) => library.url);
 
     /**
      * The product a /p/ route names, read fresh so title and version edits
@@ -432,14 +431,16 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
     };
 
     /**
-     * The frame's CSP: the published preview CSP with the uploads origin
-     * mapped to this product's assets path only, plus the kit's Alpine
-     * build, so one product's template cannot load another's files.
+     * The frame's CSP: the published preview CSP with the platform's
+     * media sources (uploads origin, models path) mapped to this product's
+     * assets path only, so one product's template cannot load another's
+     * files, plus the kit's Alpine build. Library builds keep the
+     * published libraries path.
      *
      * @param {import('./workspace.js').Product} product
      */
     const frameCsp = (product) => {
-        const directives = localCspDirectives(documents.rules.preview_csp ?? {}, `${origin}${productBasePath(product)}${assetsDirectoryName}/`, libraryUrls);
+        const directives = localCspDirectives(documents.rules.preview_csp ?? {}, `${origin}${productBasePath(product)}${assetsDirectoryName}/`);
 
         if (directives['script-src'] !== undefined) {
             directives['script-src'] = [...directives['script-src'], `${origin}/__rafflex/alpine.js`];

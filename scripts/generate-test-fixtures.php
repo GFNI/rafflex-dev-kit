@@ -5,7 +5,8 @@
  * marketplace checkout through its DevKitContract, so the kit's tests run
  * against the documents the endpoints serve, with HTML rendered by the
  * platform's own TwigRenderer. The library list is a test stand in (a
- * fake build in test/fixtures/lib), since the registry lives in a database.
+ * fake build in test/fixtures/lib), since the registry lives in a database,
+ * with its URL built on the platform's libraries route like a real build.
  *
  * Usage: php scripts/generate-test-fixtures.php /path/to/marketplace.rafflex.io
  *
@@ -15,6 +16,7 @@
  */
 
 use App\Services\DevKitContract;
+use App\Support\CrossOriginMedia;
 use Illuminate\Contracts\Console\Kernel;
 
 $marketplace = $argv[1] ?? null;
@@ -43,7 +45,7 @@ $libraryContent = [
     'libraries' => [[
         'name' => 'three.js',
         'version' => '0.0.0-test',
-        'url' => 'https://static.rafflex.io/marketplace/libraries/three/0.0.0-test/three.module.min.js',
+        'url' => CrossOriginMedia::url('media.libraries.show', ['name' => 'three.js', 'version' => '0.0.0-test', 'filename' => 'three.module.min.js']),
         'sha256' => hash_file('sha256', $libraryPath),
         'licence' => 'MIT',
         'contents' => 'Test stand in for the three.js bundle',

@@ -34,26 +34,35 @@ describe('frame theme', () => {
 });
 
 describe('preview CSP', () => {
-    test('maps the uploads origin to the local server and keeps the libraries path', () => {
+    test('maps origin and path media sources to the product assets path and keeps the libraries path', () => {
+        const assets = 'http://127.0.0.1:5173/p/games/spin-to-win/assets/';
         const directives = localCspDirectives({
             sandbox: ['allow-scripts'],
             'default-src': ["'none'"],
-            'script-src': ["'self'", "'unsafe-inline'", 'https://static.rafflex.io/marketplace/libraries/'],
+            'script-src': ["'self'", "'unsafe-inline'", 'https://marketplace.rafflex.io/media/libraries/'],
             'img-src': ["'self'", 'data:', 'blob:', 'https://static.rafflex.io'],
-            'connect-src': ['https://static.rafflex.io', 'blob:'],
+            'media-src': ["'self'", 'https://static.rafflex.io', 'https://marketplace.rafflex.io/media/audio/'],
+            'connect-src': ['https://marketplace.rafflex.io/media/models/', 'blob:'],
             'form-action': ["'none'"],
             'base-uri': ["'none'"],
-        }, 'http://127.0.0.1:5173', ['https://static.rafflex.io/marketplace/libraries/three/1/three.js']);
+        }, assets);
 
         assert.deepEqual(directives, {
             sandbox: ['allow-scripts'],
             'default-src': ["'none'"],
-            'script-src': ["'self'", "'unsafe-inline'", 'https://static.rafflex.io/marketplace/libraries/', 'http://127.0.0.1:5173', 'https://static.rafflex.io/marketplace/libraries/three/1/three.js'],
-            'img-src': ["'self'", 'data:', 'blob:', 'http://127.0.0.1:5173'],
-            'connect-src': ['http://127.0.0.1:5173', 'blob:'],
+            'script-src': ["'self'", "'unsafe-inline'", 'https://marketplace.rafflex.io/media/libraries/'],
+            'img-src': ["'self'", 'data:', 'blob:', assets],
+            'media-src': ["'self'", assets],
+            'connect-src': [assets, 'blob:'],
             'form-action': ["'none'"],
             'base-uri': ["'none'"],
         });
+    });
+
+    test('never adds the local server or a product assets path to script-src', () => {
+        const directives = localCspDirectives({ 'script-src': ["'self'"] }, 'http://127.0.0.1:5173/p/games/spin-to-win/assets/');
+
+        assert.deepEqual(directives, { 'script-src': ["'self'"] });
     });
 });
 
@@ -110,6 +119,8 @@ describe('dev server', () => {
         const csp = String(frame.headers['content-security-policy']);
         const origin = server.url.replace(/\/$/, '');
         const assets = `${productUrl}assets/`;
+        const scriptSources = (csp.split('; ').find((directive) => directive.startsWith('script-src ')) ?? '').split(' ').slice(1);
+        const librariesSource = documents.rules.preview_csp['script-src'].find((source) => source.endsWith('/media/libraries/'));
 
         assert.equal(frame.status, 200);
         assert.match(frame.body, /<p>3 plays<\/p>/);
@@ -122,8 +133,11 @@ describe('dev server', () => {
         assert.ok(csp.includes(`img-src 'self' data: blob: ${assets};`), csp);
         assert.ok(csp.includes(`connect-src ${assets} blob:`), csp);
         assert.ok(csp.includes(`${origin}/__rafflex/alpine.js`), csp);
-        assert.ok(csp.includes(documents.libraries.libraries[0].url), csp);
-        assert.equal(csp.includes('marketplace.rafflex.io.test'), false);
+        assert.ok(scriptSources.some((source) => documents.libraries.libraries[0].url.startsWith(source)), csp);
+        assert.ok(scriptSources.includes(librariesSource), csp);
+        assert.equal(scriptSources.includes(assets), false, csp);
+        assert.equal(csp.includes('/media/models/'), false, csp);
+        assert.equal(csp.replace(librariesSource, '').includes('marketplace.rafflex.io.test'), false, csp);
     });
 
     test('shows a render error inside the frame', async () => {
