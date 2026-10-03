@@ -1,6 +1,8 @@
 import { refreshAgentsMarkdown, serverAgentsMarkdown } from '../agents-md.js';
 import { currentBranch, gitState } from '../git.js';
+import { planListingImagesFor } from '../push-plan.js';
 import { readCachedDocuments } from '../remote.js';
+import { submissionLines, submissionStatus } from '../submission.js';
 import { compareWithRemote, isRemoteStale, readLocalState } from '../sync-state.js';
 import { loadWorkspace, selectProducts } from '../workspace.js';
 import { fail, messageOf, writeJson } from './output.js';
@@ -27,13 +29,15 @@ function remoteSummary(remote) {
 
 /**
  * @param {import('../workspace.js').Product} product
- * @param {{rules?: any, libraries?: any}} documents
+ * @param {{rules?: any, libraries?: any, categories?: any}} documents
  * @param {string|null} [branch] The branch the workspace is on, to warn when the last sync was recorded on another.
  */
 export function productStatus(product, documents, branch = null) {
     const remote = product.manifest.remote;
     const local = readLocalState(product, documents);
     const changes = compareWithRemote(local, remote);
+    const listingImages = planListingImagesFor(local, remote);
+    const listingImagesChanged = listingImages.cover !== null || listingImages.screenshots.length > 0;
     /** @type {string[]} */
     const problems = [];
 
@@ -65,10 +69,12 @@ export function productStatus(product, documents, branch = null) {
                 changed: changes.assets.changed.map(({ path, tag }) => ({ path, tag })),
                 removed: changes.assets.removed,
             },
-            any: changes.any,
+            listing_images: { cover: listingImages.cover !== null, screenshots: listingImages.screenshots.length },
+            any: changes.any || listingImagesChanged,
         },
         problems,
         warnings: branchWarnings(remote, branch),
+        submission: submissionStatus(product, documents, local),
     };
 }
 
@@ -133,6 +139,10 @@ function statusLines(status) {
         changed.push(`assets (${assetParts.join(', ')})`);
     }
 
+    if (changes.listing_images.cover || changes.listing_images.screenshots > 0) {
+        changed.push('listing images');
+    }
+
     if (remote === null) {
         lines.push('  local: nothing pushed yet');
     } else {
@@ -146,6 +156,8 @@ function statusLines(status) {
     for (const warning of status.warnings) {
         lines.push(`  warning: ${warning}`);
     }
+
+    lines.push(...submissionLines(status.submission));
 
     return lines;
 }
@@ -177,7 +189,7 @@ export async function runStatusCommand(context) {
         return fail(context, messageOf(error), 2);
     }
 
-    const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries']);
+    const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
     const state = gitState(workspace.root);
     const branch = state.repository ? currentBranch(workspace.root) : null;
     const git = { ...state, branch };

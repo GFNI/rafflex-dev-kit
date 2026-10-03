@@ -1,6 +1,7 @@
 import { scanAssets } from '../assets.js';
 import { isBlocking, runChecks, verdictNote } from '../checker.js';
 import { assetUrl } from '../dev-server.js';
+import { productFileIssues } from '../product-checks.js';
 import { qualityIssues } from '../quality.js';
 import { loadDocuments } from '../remote.js';
 import { loadWorkspace, readTemplate, selectProducts, withManifest } from '../workspace.js';
@@ -47,6 +48,7 @@ export async function checkProduct(product, loaded, requestedPlayCount) {
     const { issues, skippedPatterns } = runChecks({ template, files: scan.files, assetRefusals: scan.refusals, documents, playCount, renderedPlayCounts: 'all', type: product.type });
 
     issues.push(...await qualityIssues({ type: product.type, template, files: scan.files, documents }));
+    issues.push(...productFileIssues(product, documents));
     const passed = !issues.some(isBlocking);
     const warnings = [...loaded.warnings];
 

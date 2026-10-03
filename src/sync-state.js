@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { scanAssets } from './assets.js';
-import { canonicalListing, parseListing, sortedJson } from './listing.js';
+import { canonicalListing, parseListing, resolveListingCategories, sortedJson } from './listing.js';
+import { readListingImages, remoteListingImagesFrom } from './listing-images.js';
 import { readTemplate } from './workspace.js';
 
 /**
@@ -105,9 +106,13 @@ export function isRemoteStale(remote, now = Date.now()) {
  * @typedef {object} LocalState
  * @property {{sha256: string, text: string}|null} template   null when template.twig is missing.
  * @property {{sha256: string, value: Record<string, any>}|{error: string}} options
- * @property {{sha256: string, fields: import('./listing.js').ListingFields}|{error: string}} listing
+ * @property {{sha256: string, fields: import('./listing.js').ListingFields, unknown_categories: string[], unresolved_categories: string[]}|{error: string}} listing
+ *   Category names are resolved to ids through categories.json; names it
+ *   does not hold are `unknown_categories`, and names that could not be
+ *   looked up (no category list) are `unresolved_categories`.
  * @property {LocalAsset[]} assets
  * @property {import('./assets.js').AssetRefusal[]} refusals
+ * @property {import('./listing-images.js').LocalListingImages} listing_images
  */
 
 /**
@@ -117,7 +122,7 @@ export function isRemoteStale(remote, now = Date.now()) {
  * its filename.
  *
  * @param {import('./workspace.js').Product} product
- * @param {{rules?: any, libraries?: any}|null} [documents]
+ * @param {{rules?: any, libraries?: any, categories?: any}|null} [documents]
  * @returns {LocalState}
  */
 export function readLocalState(product, documents = null) {
@@ -151,9 +156,18 @@ export function readLocalState(product, documents = null) {
     let listing;
 
     try {
-        const fields = parseListing(existsSync(product.listingPath) ? readFileSync(product.listingPath, 'utf8') : '');
+        const parsed = parseListing(existsSync(product.listingPath) ? readFileSync(product.listingPath, 'utf8') : '');
+        const resolved = resolveListingCategories(parsed, documents?.categories);
+        const unsettled = [...resolved.unknown.filter((entry) => !/^\d+$/.test(entry)), ...resolved.unresolved];
 
-        listing = { sha256: listingHash(fields), fields };
+        // Names that resolved to nothing are part of the hash, so such a
+        // listing never reads as unchanged; check blocks it anyway.
+        listing = {
+            sha256: unsettled.length === 0 ? listingHash(resolved.fields) : sha256(`${canonicalListing(resolved.fields)}\n${unsettled.join('\n')}`),
+            fields: resolved.fields,
+            unknown_categories: resolved.unknown,
+            unresolved_categories: resolved.unresolved,
+        };
     } catch (error) {
         listing = { error: /** @type {Error} */ (error).message };
     }
@@ -171,7 +185,7 @@ export function readLocalState(product, documents = null) {
         library: asset.library?.name ?? null,
     }));
 
-    return { template, options, listing, assets, refusals: scan.refusals };
+    return { template, options, listing, assets, refusals: scan.refusals, listing_images: readListingImages(product.directory) };
 }
 
 /**
@@ -399,11 +413,26 @@ export function remoteFromProduct(product, now = new Date()) {
                 sha256: typeof entry.sha256 === 'string' ? entry.sha256.toLowerCase() : null,
                 kind: String(entry.kind ?? ''),
                 library: typeof entry.library?.name === 'string' ? entry.library.name : (typeof entry.library === 'string' ? entry.library : null),
+                ...(typeof entry.locked === 'boolean' ? { locked: entry.locked } : {}),
             })),
         live: draft !== null || released === null ? null : {
             version: released.version,
             template_sha256: typeof released.template_sha256 === 'string' ? released.template_sha256.toLowerCase() : null,
             option_overrides_sha256: Object.hasOwn(released, 'option_overrides') ? optionOverridesHash(released.option_overrides) : null,
         },
+        ...listingImagesEntry(product),
     };
+}
+
+/**
+ * The remote listing images (cover and screenshots with their SHA-256),
+ * recorded only when the payload carries them.
+ *
+ * @param {Record<string, any>} product
+ * @returns {{listing_images?: import('./listing-images.js').RemoteListingImages}}
+ */
+function listingImagesEntry(product) {
+    const images = remoteListingImagesFrom(product);
+
+    return images === undefined ? {} : { listing_images: images };
 }

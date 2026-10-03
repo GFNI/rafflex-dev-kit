@@ -342,7 +342,7 @@ export async function runImportCommand(context) {
         let changes = [];
 
         try {
-            const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries']);
+            const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
 
             changes = describeChanges(compareWithRemote(readLocalState(existing, documents), existing.manifest.remote));
         } catch {

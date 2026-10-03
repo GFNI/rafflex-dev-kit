@@ -88,6 +88,7 @@ describe('import', () => {
                 { tag: 'three', filename: 'three.module.min.js', sha256: bundle.product.media[3].sha256, kind: 'library', library: 'three.js' },
             ],
             live: null,
+            listing_images: { cover: null, screenshots: [] },
         });
         assert.deepEqual(readdirSync(join(root, 'games')), ['spin-to-win']);
 

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isBlocking, verdictNote } from '../checker.js';
+import { submissionLines, submissionStatus } from '../submission.js';
 import { resultsDirectoryName } from '../workspace.js';
 import { checkProduct } from './check.js';
 import { formatProduct, loadSelection } from './format.js';
@@ -18,6 +19,7 @@ import { testLines, testProducts } from './test.js';
  * @property {(import('../checker.js').Issue & {screenshot?: string})[]} issues Every check and test issue.
  * @property {number} blocking          How many issues block.
  * @property {number} warnings          How many issues are warnings.
+ * @property {import('../submission.js').SubmissionStatus} submission What review still needs; never changes `ready`.
  * @property {string} note
  */
 
@@ -33,7 +35,7 @@ import { testLines, testProducts } from './test.js';
  * @returns {Promise<VerifyResult[]>}
  */
 export async function verifyProducts({ workspace, loaded, products, onProgress = () => {} }) {
-    /** @type {{format: import('./format.js').FormatResult, check: import('./check.js').ProductCheck}[]} */
+    /** @type {{format: import('./format.js').FormatResult, check: import('./check.js').ProductCheck, submission: import('../submission.js').SubmissionStatus}[]} */
     const staged = [];
 
     for (const product of products) {
@@ -42,13 +44,13 @@ export async function verifyProducts({ workspace, loaded, products, onProgress =
         onProgress(`Checking ${product.path} in every scenario`);
         const { result: check } = await checkProduct(product, loaded, undefined);
 
-        staged.push({ format, check });
+        staged.push({ format, check, submission: submissionFor(product, loaded.documents) });
     }
 
     onProgress('Running the browser tests');
     const tests = await testProducts({ workspace, loaded, products });
 
-    return staged.map(({ format, check }, index) => {
+    return staged.map(({ format, check, submission }, index) => {
         const test = tests[index];
         const issues = [...check.issues, ...test.issues];
         const blocking = issues.filter(isBlocking).length;
@@ -63,9 +65,26 @@ export async function verifyProducts({ workspace, loaded, products, onProgress =
             issues,
             blocking,
             warnings: issues.length - blocking,
+            submission,
             note: verdictNote,
         };
     });
+}
+
+/**
+ * What review still needs, or nothing to report when the product's files
+ * cannot be read (the check reports that).
+ *
+ * @param {import('../workspace.js').Product} product
+ * @param {Record<string, any>} documents
+ * @returns {import('../submission.js').SubmissionStatus}
+ */
+function submissionFor(product, documents) {
+    try {
+        return submissionStatus(product, documents);
+    } catch {
+        return { ready: true, missing: [] };
+    }
 }
 
 /**
@@ -93,6 +112,7 @@ function verifyLines(result) {
 
     lines.push(...testLines(result.test).map((line, index) => (index === 0 ? `  test: ${line.replace(`${result.product}: `, '')}` : `  ${line}`)));
     lines.push(`  ${result.blocking} blocking, ${result.warnings} ${result.warnings === 1 ? 'warning' : 'warnings'}.`);
+    lines.push(...submissionLines(result.submission));
 
     return lines;
 }

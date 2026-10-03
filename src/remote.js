@@ -11,7 +11,15 @@ import { kitVersion } from './version.js';
 
 export const defaultBaseUrl = 'https://marketplace.rafflex.io';
 
-export const workspaceDocuments = ['rules', 'contexts', 'skeletons', 'libraries'];
+export const workspaceDocuments = ['rules', 'contexts', 'skeletons', 'libraries', 'categories'];
+
+/**
+ * Documents a marketplace may not publish yet (categories.json arrived
+ * with PRD 45). One the manifest does not list is not requested, and one
+ * that cannot be had is null rather than an error, so the checks that
+ * need it skip quietly.
+ */
+export const optionalDocuments = ['categories'];
 
 const requestTimeoutMs = 15000;
 
@@ -198,7 +206,7 @@ export async function loadDocuments({ workspaceDirectory, baseUrl, names = works
 
         manifestChanged = meta.manifest_version !== undefined && meta.manifest_version !== manifest?.version;
     } catch (error) {
-        const missing = names.filter((name) => cached(name) === null);
+        const missing = names.filter((name) => cached(name) === null && !optionalDocuments.includes(name));
 
         if (missing.length > 0) {
             throw new RulesUnavailableError(`Could not reach ${baseUrl} (${describeError(error)}) and there is no cached copy of ${missing.map((name) => `${name}.json`).join(', ')}. Connect to the internet and run again. Behind a corporate proxy, set NODE_EXTRA_CA_CERTS to its certificate authority.`);
@@ -228,6 +236,12 @@ export async function loadDocuments({ workspaceDirectory, baseUrl, names = works
         const expectedVersion = manifest?.versions?.[name] ?? (typeof entry === 'object' ? entry?.version : undefined);
         const cachedDocument = cached(name);
         const cachedMeta = meta.documents[name] ?? {};
+        const optional = optionalDocuments.includes(name);
+
+        if (optional && entry === undefined) {
+            documents[name] = null;
+            continue;
+        }
 
         if (cachedDocument !== null && expectedVersion !== undefined && cachedDocument.version === expectedVersion) {
             documents[name] = cachedDocument;
@@ -247,6 +261,11 @@ export async function loadDocuments({ workspaceDirectory, baseUrl, names = works
             documents[name] = JSON.parse(result.body);
             meta.documents[name] = { etag: result.etag, version: documents[name].version ?? null, url };
         } catch (error) {
+            if (cachedDocument === null && optional) {
+                documents[name] = null;
+                continue;
+            }
+
             if (cachedDocument === null) {
                 throw new RulesUnavailableError(`Could not download ${url} (${describeError(error)}) and there is no cached copy. Try again in a moment.`);
             }

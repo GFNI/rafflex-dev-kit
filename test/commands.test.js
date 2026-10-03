@@ -224,7 +224,7 @@ describe('workspace commands', () => {
             });
             assert.equal(synced.in_review, true);
             assert.equal(synced.stale_remote, false);
-            assert.deepEqual(synced.changes, { template: false, options: false, listing: false, assets: { new: [], changed: [], removed: [] }, any: false });
+            assert.deepEqual(synced.changes, { template: false, options: false, listing: false, assets: { new: [], changed: [], removed: [] }, listing_images: { cover: false, screenshots: 0 }, any: false });
 
             writeFileSync(join(root, 'games', 'spin-to-win', 'assets', 'logo.png'), 'logo');
             writeFileSync(join(root, 'games', 'spin-to-win', 'template.twig'), '<p>changed</p>');
@@ -238,7 +238,7 @@ describe('workspace commands', () => {
         });
 
         test('reports a broken listing as a problem without failing the others', async () => {
-            const root = temporaryWorkspace({ products: [{ title: 'Spin to Win', listing: '---\ncategory_ids: [x]\n---\n' }] });
+            const root = temporaryWorkspace({ products: [{ title: 'Spin to Win', listing: '---\ncategory_ids: [2.5]\n---\n' }] });
             const { code, output } = await runJson(['status'], { cwd: root });
 
             assert.equal(code, 0);

@@ -37,7 +37,14 @@ describe('listing.md', () => {
     });
 
     test('refuses category ids that are not whole numbers', () => {
-        assert.throws(() => parseListing('---\ncategory_ids: [one]\n---\n'), ListingError);
+        assert.throws(() => parseListing('---\ncategory_ids: [2.5]\n---\n'), ListingError);
+        assert.throws(() => parseListing('---\ncategory_ids: [-3]\n---\n'), ListingError);
+    });
+
+    test('reads category names beside ids, under category_ids or categories', () => {
+        assert.deepEqual(parseListing('---\ncategory_ids: [3, "Instant win"]\n---\n').category_names, ['Instant win']);
+        assert.deepEqual(parseListing('---\ncategory_ids: [3, "Instant win"]\n---\n').category_ids, [3]);
+        assert.deepEqual(parseListing('---\ncategories:\n  - Arcade\n  - 12\n---\n'), { description: '', documentation: '', install_notes: '', video_url: '', category_ids: [12], tag_names: [], category_names: ['Arcade'] });
     });
 
     test('the canonical form sorts keys, ids, and tags and fills missing fields', () => {

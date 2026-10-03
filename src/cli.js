@@ -1,4 +1,5 @@
 import { commandNamed, devKitCommands } from './command-list.js';
+import { runCaptureCommand } from './commands/capture.js';
 import { runCheckCommand } from './commands/check.js';
 import { runDevCommand } from './commands/dev.js';
 import { runFormatCommand } from './commands/format.js';
@@ -40,7 +41,7 @@ Options
   --play-count N      check: plays per scenario when rendering (default from the rules)
   --verbose           check: also list rules the kit cannot apply locally
   --type game|block   new: the product type, instead of the first argument
-  --force             import: replace an existing product folder
+  --force             import: replace an existing product folder; capture: replace the listing images
   --port N            Preferred app port (default 5173, the next free one if taken)
   --no-open           Do not open the browser
   -h, --help          Show this help
@@ -216,8 +217,8 @@ export function parseArguments(argv) {
             throw new UsageError('--yes only applies to restore.');
         }
 
-        if (options.force && options.command !== 'import') {
-            throw new UsageError('--force only applies to import.');
+        if (options.force && !['import', 'capture'].includes(options.command)) {
+            throw new UsageError('--force only applies to import and capture.');
         }
 
         if (options.type !== undefined && options.command !== 'new') {
@@ -300,6 +301,8 @@ export async function main(argv, io = {}) {
             return runCheckCommand(context);
         case 'test':
             return runTestCommand(context);
+        case 'capture':
+            return runCaptureCommand(context);
         case 'verify':
             return runVerifyCommand(context);
         case 'restore':

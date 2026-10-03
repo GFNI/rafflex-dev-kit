@@ -36,6 +36,9 @@ const revealTimeoutMs = 10000;
 
 const settleMs = 300;
 
+/** Shared with the listing image capture (capture.js, PRD 45). */
+export { revealRecorder, playNextEntry, settleMs };
+
 /**
  * Records every outcome the page reveals once recording starts: an element
  * gaining data-rafflex-result="win|lose", or its value changing.

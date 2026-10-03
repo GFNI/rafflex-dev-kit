@@ -379,6 +379,16 @@
                         </div>
                         <p x-text="product.publish.next"></p>
                         <p class="error small" x-show="product.publish.disabled" x-text="product.publish.reason"></p>
+                        <template x-if="product.submission && !product.submission.ready">
+                            <div class="stack tight" data-before-review>
+                                <p class="small"><strong>Before review</strong> <span class="muted">Your AI can push a draft without these, but review needs them.</span></p>
+                                <ul class="checklist">
+                                    <template x-for="(item, index) in product.submission.missing" :key="index">
+                                        <li x-text="item.message"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
                         <template x-if="product.publish.prompt">
                             <div class="prompt">
                                 <pre x-text="product.publish.prompt.text"></pre>

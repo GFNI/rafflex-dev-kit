@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isBlocking } from '../checker.js';
+import { lockedAssetRefusals, planListingImageLines, planListingImagesFor } from '../push-plan.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
+import { submissionLines, submissionStatus } from '../submission.js';
 import { compareWithRemote, isRemoteStale, readLocalState } from '../sync-state.js';
 import { loadWorkspace, selectProduct, withManifest } from '../workspace.js';
 import { verifyProducts } from './verify.js';
@@ -17,11 +19,11 @@ import { fail, messageOf, writeJson } from './output.js';
  */
 export async function assetDocuments(workspace) {
     try {
-        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl, names: ['rules', 'libraries'] });
+        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl, names: ['rules', 'libraries', 'categories'] });
 
         return { documents: loaded.documents, warnings: loaded.warnings };
     } catch (error) {
-        const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries']);
+        const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
 
         return { documents, warnings: [`Could not load the platform's upload rules (${messageOf(error)}); assets are tagged by filename and approved libraries are not recognised.`] };
     }
@@ -31,7 +33,7 @@ export async function assetDocuments(workspace) {
  * The push plan for a product, in the contract's `plan --json` shape.
  *
  * @param {import('../workspace.js').Product} product
- * @param {{rules?: any, libraries?: any}} documents
+ * @param {{rules?: any, libraries?: any, categories?: any}} documents
  * @param {number} [now]
  */
 export function buildPlan(product, documents, now = Date.now()) {
@@ -49,6 +51,11 @@ export function buildPlan(product, documents, now = Date.now()) {
     }
 
     const changes = compareWithRemote(local, remote);
+    const locked = lockedAssetRefusals(changes, remote, documents.rules);
+
+    changes.assets.changed = changes.assets.changed.filter((asset) => !locked.some((refusal) => refusal.path === asset.path));
+
+    const listingImages = planListingImagesFor(local, remote);
     const options = /** @type {{sha256: string, value: Record<string, any>}} */ (local.options);
     const listing = /** @type {{sha256: string, fields: import('../listing.js').ListingFields}} */ (local.listing);
     const assets = [
@@ -73,7 +80,7 @@ export function buildPlan(product, documents, now = Date.now()) {
         plan: {
             product: product.path,
             slug: product.slug,
-            nothing_to_push: !changes.template && !changes.options && !changes.listing && assets.length === 0,
+            nothing_to_push: !changes.template && !changes.options && !changes.listing && assets.length === 0 && listingImages.cover === null && listingImages.screenshots.length === 0,
             stale_remote: isRemoteStale(remote, now),
             template: { changed: changes.template },
             options: changes.options ? { changed: true, option_overrides: options.value } : { changed: false },
@@ -82,6 +89,9 @@ export function buildPlan(product, documents, now = Date.now()) {
             removed_assets: changes.assets.removed,
             release_notes: unreleasedNotes(changelog),
             version: product.version,
+            listing_images: listingImages,
+            refusals: locked,
+            submission: submissionStatus(product, documents, local),
         },
         refusals: local.refusals,
     };
@@ -107,7 +117,7 @@ function planLines(plan, product) {
     }
 
     if (plan.nothing_to_push) {
-        lines.push('  Nothing to push.', ...removedAssetLines(plan.removed_assets));
+        lines.push('  Nothing to push.', ...removedAssetLines(plan.removed_assets), ...planListingImageLines(plan).notes, ...submissionLines(plan.submission));
 
         return lines;
     }
@@ -135,8 +145,11 @@ function planLines(plan, product) {
             : `request_media_upload: ${asset.path} as ${asset.tag}, ${asset.mime_type}, ${asset.size} bytes (${asset.change})`);
     }
 
+    const listingImageLines = planListingImageLines(plan);
+
+    steps.push(...listingImageLines.steps);
     steps.push(`get_product, then pipe it to npx @rafflex/dev synced ${plan.product}`);
-    lines.push(...steps.map((step, index) => `  ${index + 1}. ${step}`), ...removedAssetLines(plan.removed_assets));
+    lines.push(...steps.map((step, index) => `  ${index + 1}. ${step}`), ...removedAssetLines(plan.removed_assets), ...listingImageLines.notes, ...submissionLines(plan.submission));
 
     return lines;
 }

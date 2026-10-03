@@ -8,7 +8,8 @@
         "skeletons": "__BASE_URL__/dev-kit/skeletons.json",
         "libraries": "__BASE_URL__/dev-kit/libraries.json",
         "fixtures": "__BASE_URL__/dev-kit/fixtures.json",
-        "prompts": "__BASE_URL__/dev-kit/prompts.json"
+        "prompts": "__BASE_URL__/dev-kit/prompts.json",
+        "categories": "__BASE_URL__/dev-kit/categories.json"
     },
     "versions": {
         "rules": "25eb8113e2d6",
@@ -16,7 +17,8 @@
         "skeletons": "8946c5bb971d",
         "libraries": "493322f3af02",
         "fixtures": "744e2c3c4f86",
-        "prompts": "7e2698cfafb0"
+        "prompts": "7e2698cfafb0",
+        "categories": "5c1d0a7e93b2"
     },
     "asset_types": [
         {
@@ -71,6 +73,12 @@
             "name": "test",
             "usage": "npx @rafflex/dev test [<product>...|--all]",
             "summary": "Plays every scenario in headless Chromium at phone, tablet, and desktop widths, plays games through, and runs the specs in tests/. Needs Playwright (test --install).",
+            "json": true
+        },
+        {
+            "name": "capture",
+            "usage": "npx @rafflex/dev capture <product>",
+            "summary": "Writes a cover image and screenshots into the product's listing/ folder from the browser run when it has none, and never overwrites the creator's own unless --force is given. Needs Playwright.",
             "json": true
         },
         {

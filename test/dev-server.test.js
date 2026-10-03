@@ -10,6 +10,7 @@ import { fixtureDocuments, glbBuffer, stubPrompts, temporaryProduct } from './he
 
 const documents = fixtureDocuments();
 const libraryBytes = readFileSync(new URL('./fixtures/lib/fake-three.module.js', import.meta.url));
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 describe('frame theme', () => {
     test('the frame carries the published theme variables and html class, like the studio frame', () => {
@@ -96,7 +97,7 @@ describe('dev server', () => {
     before(async () => {
         directory = temporaryProduct({
             template: `<p>{{ play_count }} plays</p><img src="{{ files['background'] }}"><script type="module">import * as THREE from "{{ files['three'] }}";</script>`,
-            assets: { 'background.png': 'png bytes', 'three.module.min.js': libraryBytes, 'prize-box.glb': glbBuffer() },
+            assets: { 'background.png': Buffer.concat([pngSignature, Buffer.from('png bytes')]), 'three.module.min.js': libraryBytes, 'prize-box.glb': glbBuffer() },
         });
         const workspace = loadWorkspace(directory);
 

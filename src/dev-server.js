@@ -10,6 +10,7 @@ import { promptSource } from './app/prompts.js';
 import { imageExtensions, readLastResult, resultsDirectoryName } from './app/results.js';
 import { scanAssets } from './assets.js';
 import { nonBlockingCodes, runChecks, scenarioValues, verdictNote } from './checker.js';
+import { productFileIssues } from './product-checks.js';
 import { qualityIssues } from './quality.js';
 import { unreleasedNotes } from './commands/release.js';
 import { productStatus } from './commands/status.js';
@@ -347,6 +348,10 @@ export function productSummary(product, documents) {
     ].filter(Boolean);
     const changed = [changes.template && 'template', changes.options && 'options', changes.listing && 'listing', assetParts.length > 0 && `assets (${assetParts.join(', ')})`].filter(Boolean);
 
+    if (changes.listing_images.cover || changes.listing_images.screenshots > 0) {
+        changed.push('listing images');
+    }
+
     return {
         path: product.path,
         type: product.type,
@@ -367,6 +372,7 @@ export function productSummary(product, documents) {
         },
         local: remote === null ? null : { changed: /** @type {string[]} */ (changed) },
         problems: status.problems,
+        submission: status.submission,
     };
 }
 
@@ -589,6 +595,7 @@ export async function startDevServer({
             });
 
             issues.push(...await qualityIssues({ type: product.type, template, files: scan.files, documents }));
+            issues.push(...productFileIssues(product, documents));
 
             payload = {
                 issues,

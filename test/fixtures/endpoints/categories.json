@@ -1,0 +1,20 @@
+{
+    "version": "5c1d0a7e93b2",
+    "categories": [
+        {
+            "id": 3,
+            "name": "Wheels",
+            "slug": "wheels"
+        },
+        {
+            "id": 7,
+            "name": "Arcade",
+            "slug": "arcade"
+        },
+        {
+            "id": 12,
+            "name": "Instant win",
+            "slug": "instant-win"
+        }
+    ]
+}

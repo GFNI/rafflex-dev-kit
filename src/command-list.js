@@ -61,6 +61,13 @@ export const devKitCommands = [
         positionals: { min: 0, max: Number.POSITIVE_INFINITY },
     },
     {
+        name: 'capture',
+        usage: 'npx @rafflex/dev capture <product>',
+        summary: "Write a cover image and screenshots into the product's listing/ folder from the preview when it has none. Never overwrites without --force. Needs Playwright.",
+        json: true,
+        positionals: { min: 0, max: 1 },
+    },
+    {
         name: 'verify',
         usage: 'npx @rafflex/dev verify [<product>...|--all]',
         summary: 'format, then check, then test when Playwright is installed. Run it before every push.',

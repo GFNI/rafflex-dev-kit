@@ -34,7 +34,10 @@ export const listingSections = /** @type {const} */ ([
 ]);
 
 /**
- * @typedef {{description: string, documentation: string, install_notes: string, video_url: string, category_ids: number[], tag_names: string[]}} ListingFields
+ * @typedef {{description: string, documentation: string, install_notes: string, video_url: string, category_ids: number[], tag_names: string[], category_names?: string[]}} ListingFields
+ *
+ * `category_names` holds the categories listing.md names rather than
+ * numbers, until resolveListingCategories turns them into ids.
  */
 
 export class ListingError extends Error {
@@ -225,15 +228,35 @@ export function parseListing(text) {
     const { data, body } = splitFrontmatter(text);
     const fields = emptyListing();
 
-    fields.category_ids = asList(data.category_ids, 'category_ids').map((value) => {
-        const id = Number(value);
+    const categoryKey = data.category_ids === undefined && data.categories !== undefined ? 'categories' : 'category_ids';
+    /** @type {string[]} */
+    const categoryNames = [];
 
-        if (!Number.isInteger(id) || id < 0 || String(value).trim() === '') {
-            throw new ListingError(`listing.md's category_ids must be whole numbers; "${value}" is not.`);
+    fields.category_ids = [];
+
+    for (const value of asList(data[categoryKey], categoryKey)) {
+        const text = String(value).trim();
+
+        if (text === '') {
+            throw new ListingError(`listing.md's ${categoryKey} has an empty entry. Use category names or ids.`);
         }
 
-        return id;
-    });
+        if (/^\d+$/.test(text)) {
+            fields.category_ids.push(Number(text));
+            continue;
+        }
+
+        if (/^[-+]?[\d.,]+$/.test(text)) {
+            throw new ListingError(`listing.md's ${categoryKey} must be category names or whole number ids; "${value}" is neither.`);
+        }
+
+        categoryNames.push(text);
+    }
+
+    if (categoryNames.length > 0) {
+        fields.category_names = categoryNames;
+    }
+
     fields.tag_names = asList(data.tag_names, 'tag_names').map(String);
 
     if (Array.isArray(data.video_url)) {
@@ -266,6 +289,63 @@ export function parseListing(text) {
     });
 
     return fields;
+}
+
+/**
+ * @typedef {{id: number, name: string, slug?: string}} Category
+ */
+
+/**
+ * Turn the category names listing.md uses into ids, case insensitively by
+ * name (or slug), through the marketplace's categories.json. Ids pass
+ * through. Without the category list (an older marketplace, or offline
+ * with nothing cached) names cannot be resolved: they are returned in
+ * `unresolved` and the ids are left as they are.
+ *
+ * `unknown` lists every name and id the category list does not hold.
+ *
+ * @param {ListingFields} fields
+ * @param {{categories?: Category[]}|null|undefined} categoriesDocument
+ * @returns {{fields: ListingFields, unknown: string[], unresolved: string[], categories: Category[]|null}}
+ */
+export function resolveListingCategories(fields, categoriesDocument) {
+    const { category_names: names = [], ...rest } = fields;
+    const categories = Array.isArray(categoriesDocument?.categories)
+        ? categoriesDocument.categories.filter((category) => Number.isInteger(category?.id) && typeof category?.name === 'string')
+        : null;
+
+    if (categories === null) {
+        return { fields: { ...rest, category_ids: [...fields.category_ids] }, unknown: [], unresolved: [...names], categories: null };
+    }
+
+    /** @type {number[]} */
+    const ids = [];
+    /** @type {string[]} */
+    const unknown = [];
+
+    for (const id of fields.category_ids) {
+        if (!categories.some((category) => category.id === id)) {
+            unknown.push(String(id));
+        }
+
+        ids.push(id);
+    }
+
+    for (const name of names) {
+        const wanted = name.toLowerCase();
+        const match = categories.find((category) => category.name.toLowerCase() === wanted || String(category.slug ?? '').toLowerCase() === wanted);
+
+        if (match === undefined) {
+            unknown.push(name);
+            continue;
+        }
+
+        if (!ids.includes(match.id)) {
+            ids.push(match.id);
+        }
+    }
+
+    return { fields: { ...rest, category_ids: ids }, unknown, unresolved: [], categories };
 }
 
 /**
