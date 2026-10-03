@@ -24,16 +24,18 @@ The kit closes the loop: a product goes from an empty folder to in review withou
 * A product folder holds its cover and screenshots in `listing/`, committed and pushed. `capture <product> [--force]` writes them from the browser run, and never replaces the creator's own without `--force`. `import` downloads them and checks their hashes.
 * `verify`, `plan`, and `status` report `submission: {ready, missing}`: what review still needs (a description, a category, a cover image, a screenshot, release notes once a version is live, and the listing limits), with the marketplace's own messages. The app's Get it live step lists it.
 * `listing.md` accepts category names as well as ids, resolved through the marketplace's `categories.json`.
-* New blocking checks before a push: `listing_invalid`, `asset_filename`, `asset_duplicate`, `asset_capacity`, and `asset_content_mismatch`. `plan` refuses to upload a file a submitted or published version uses again (`asset_locked`) and says which name to use.
+* New blocking checks before a push: `listing_invalid` (including a cover or screenshot whose file name the upload refuses), `asset_filename`, `asset_duplicate` (only files that upload under the same name; files that share a stem take `win`, `win-2`), `asset_capacity` (counting files still on the marketplace), `asset_content_mismatch` (only content the marketplace refuses: a JPEG named `.png` is fine, AAC named `.mp3` is not), and `asset_locked` (a changed file a submitted or published version uses, which `plan` also lists under `refusals` with the name to use). Audio named as an image, or the reverse, is the warning `asset_content_warning`.
+* A product last synced by kit 0.3.0 has no record of its listing images: the checklist says to refresh its state with `synced` first, `capture` adds nothing without `--force`, and `plan` plans no listing images until the state is known.
 * `plan --json` adds `listing_images` (the cover and new screenshots, compared by SHA-256, and the screenshots to remove) and `refusals`.
 
 ### Options, as a buyer sees them
 
 * The kit infers the options a template reads exactly as the platform does (field types, labels, defaults, choices, repeaters, the Categories filter), held to a fixture suite recorded from the platform.
 * The app has an Options panel: the form a buyer sees, with the labels, help, and choices from `options.json`. Changing a value renders the preview with it. A Buyer images toggle swaps each image a buyer may replace for a placeholder of another shape.
-* `check` reports the platform's `option_warning`s, blocks on an `options.json` the marketplace would refuse (`option_override_invalid`), and renders every scenario once more with every option set as a buyer may set it (`option_render_error`).
+* `check` reports the platform's `option_warning`s, blocks on an `options.json` the marketplace would refuse (`option_override_invalid`), and renders every scenario once more with every option set as a buyer may set it (`option_render_error`, only for a failure the marketplace has too; any other is a warning).
 * Creator specs pass options with `open(scenario, {options})`, and the browser run adds a buyer images pass with screenshots.
 * `plan --json` adds `suggested_version`: the bump the platform would suggest against the live version's options, before the push.
-* Option overrides are compared after the same tidy up the marketplace applies, so `plan` no longer reports options as changed after every push.
+* Option overrides are compared after the same tidy up the marketplace applies, entries the template does not read dropped, so `plan` no longer reports options as changed after every push.
+* The preview renders closer to the platform: every `date` format character (`e` prints UTC), a render error for text the platform cannot read as a time, `number_format` with any number of decimals, arithmetic with null and booleans, division and modulo by zero failing, and `length` and `join` on numbers and text. Buyer image placeholders keep their shape inside a `<style>`.
 
 The command not found message now says to run the command with `npx @rafflex/dev@latest`.
