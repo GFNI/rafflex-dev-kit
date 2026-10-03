@@ -141,6 +141,12 @@ export async function runCheckCommand({ cwd, stdout, stderr, options }) {
         workspace = withManifest(workspace, loaded.manifest);
         products = selectProducts(workspace, { names: options.positionals, all: options.all, cwd, fallback: 'all' });
 
+        const range = loaded.documents.contexts?.play_count;
+
+        if (options.playCount !== undefined && Number.isInteger(range?.min) && Number.isInteger(range?.max) && (options.playCount < range.min || options.playCount > range.max)) {
+            throw new Error(`--play-count must be from ${range.min} to ${range.max}, the platform's range (default ${range.default ?? range.min}).`);
+        }
+
         if (products.length === 0) {
             throw new Error('There are no products in this workspace yet. Add one with npx @rafflex/dev new <game|block> "<title>".');
         }

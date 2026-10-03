@@ -323,7 +323,7 @@ describe('push', () => {
         assert.equal(code, 1);
         assert.equal(output.error.code, 'conflict');
         assert.match(output.error.message, /revision 2, and this workspace last recorded revision 1/);
-        assert.match(output.error.message, /export_product and npx @rafflex\/dev import <bundle_url> --force/);
+        assert.match(output.error.message, /export_product and npx @rafflex\/dev import "<bundle_url>" --force/);
         assert.equal(marketplace.pushes().length, before);
     });
 
@@ -351,7 +351,7 @@ describe('push', () => {
         }
     });
 
-    test('an expired link and a rate limit say what to do next, and exit 2', async () => {
+    test('an expired link exits 2 and a rate limit exits 1, each saying what to do next', async () => {
         const { root, link, path, directory } = await syncedProduct('limits');
 
         writeFileSync(join(directory, 'template.twig'), '<p>{{ play_count }} soon</p>\n');
@@ -360,7 +360,7 @@ describe('push', () => {
         try {
             const limited = await kit(['push', path, link], root);
 
-            assert.equal(limited.code, 2);
+            assert.equal(limited.code, 1);
             assert.equal(limited.output.error.code, 'rate_limited');
             assert.equal(limited.output.error.retry_after_seconds, 30);
             assert.match(limited.output.error.message, /Wait 30 seconds/);
@@ -533,7 +533,7 @@ describe('synced and release with a sync link', () => {
         const { code, output } = await runJson(['synced', 'unborn', marketplace.issueLink(null)], { cwd: root, baseUrl: marketplace.baseUrl });
 
         assert.equal(code, 1);
-        assert.equal(output.code, 'not_created');
+        assert.equal(output.error.code, 'not_created');
     });
 
     test('release marks the version in review; with a link it records the fresh state', async () => {

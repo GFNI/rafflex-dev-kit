@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /**
@@ -14,15 +14,16 @@ const gitTimeoutMs = 30000;
  *
  * @param {string} directory
  * @param {string[]} args
+ * @param {Record<string, string>} [env] Extra environment, such as a temporary index.
  * @returns {{ok: boolean, stdout: string, stderr: string, missing: boolean}}
  */
-export function runGit(directory, args) {
+export function runGit(directory, args, env = {}) {
     const result = spawnSync('git', args, {
         cwd: directory,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: gitTimeoutMs,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
     });
     const missing = /** @type {NodeJS.ErrnoException|undefined} */ (result.error)?.code === 'ENOENT';
 
@@ -134,13 +135,19 @@ export function currentBranch(directory) {
  * of the commit), and optionally tag it. Nothing to commit is not an
  * error. An existing tag is never moved.
  *
+ * `holdBack` names files inside the folder that must not be committed as
+ * they are now (files a push did not upload): the commit keeps them as
+ * they were at `from` (the previous push), or leaves them out when `from`
+ * did not have them, so they still show as changes afterwards.
+ *
  * @param {string} root
  * @param {string|string[]} directory The product folder, or its old and new folders after a rename.
  * @param {string} message
  * @param {string|null} [tag]
+ * @param {{holdBack?: {paths: string[], from: string|null}}} [options]
  * @returns {ProductCommit}
  */
-export function commitProduct(root, directory, message, tag = null) {
+export function commitProduct(root, directory, message, tag = null, { holdBack } = {}) {
     const paths = Array.isArray(directory) ? directory : [directory];
     /** @type {ProductCommit} */
     const result = { repository: false, committed: false, commit: null, tag, tag_created: false, tag_existed: false, error: null };
@@ -150,6 +157,21 @@ export function commitProduct(root, directory, message, tag = null) {
     }
 
     result.repository = true;
+
+    if (holdBack !== undefined && holdBack.paths.length > 0) {
+        const held = commitHoldingBack(root, paths, message, holdBack);
+
+        if (held.error !== null) {
+            result.error = held.error;
+
+            return result;
+        }
+
+        result.committed = held.committed;
+        result.commit = runGit(root, ['rev-parse', 'HEAD']).stdout.trim() || null;
+
+        return result;
+    }
 
     const added = runGit(root, ['add', '-A', '--', ...paths]);
 
@@ -197,6 +219,77 @@ export function commitProduct(root, directory, message, tag = null) {
     result.tag_created = true;
 
     return result;
+}
+
+/**
+ * Commit `paths` as they are on disk, except the held back files, which
+ * keep their version at `from` (or are left out). Built in a temporary
+ * index from HEAD, so nothing else the creator staged is swept in; the
+ * real index is then reset for `paths`, leaving the held back files as
+ * unstaged changes.
+ *
+ * @param {string} root
+ * @param {string[]} paths
+ * @param {string} message
+ * @param {{paths: string[], from: string|null}} holdBack
+ * @returns {{committed: boolean, error: string|null}}
+ */
+function commitHoldingBack(root, paths, message, holdBack) {
+    const indexPath = runGit(root, ['rev-parse', '--path-format=absolute', '--git-path', `rafflex-index-${process.pid}`]).stdout.trim();
+    const env = { GIT_INDEX_FILE: indexPath };
+    const head = runGit(root, ['rev-parse', '-q', '--verify', 'HEAD^{commit}']).stdout.trim() || null;
+
+    try {
+        const steps = [
+            head === null ? ['read-tree', '--empty'] : ['read-tree', head],
+            ['add', '-A', '--', ...paths],
+        ];
+
+        for (const args of steps) {
+            const step = runGit(root, args, env);
+
+            if (!step.ok) {
+                return { committed: false, error: `git ${args[0]} failed: ${step.stderr}` };
+            }
+        }
+
+        for (const path of holdBack.paths) {
+            const file = relative(root, path).split('\\').join('/');
+            const entry = holdBack.from === null ? '' : runGit(root, ['ls-tree', holdBack.from, '--', file]).stdout.trim();
+            const match = entry.match(/^(\d+) blob ([0-9a-f]+)\t/);
+            const step = match === null
+                ? runGit(root, ['rm', '--cached', '-q', '--ignore-unmatch', '--', file], env)
+                : runGit(root, ['update-index', '--add', '--cacheinfo', `${match[1]},${match[2]},${file}`], env);
+
+            if (!step.ok) {
+                return { committed: false, error: `git could not hold back ${file}: ${step.stderr}` };
+            }
+        }
+
+        const tree = runGit(root, ['write-tree'], env).stdout.trim();
+
+        if (tree === '' || (head !== null && runGit(root, ['rev-parse', `${head}^{tree}`]).stdout.trim() === tree)) {
+            return { committed: false, error: tree === '' ? 'git write-tree failed.' : null };
+        }
+
+        const commit = runGit(root, ['commit-tree', tree, ...(head === null ? [] : ['-p', head]), '-m', message]);
+
+        if (!commit.ok) {
+            return { committed: false, error: `git commit failed: ${commit.stderr}` };
+        }
+
+        const moved = runGit(root, ['update-ref', '-m', `commit: ${message}`, 'HEAD', commit.stdout.trim(), ...(head === null ? [] : [head])]);
+
+        if (!moved.ok) {
+            return { committed: false, error: `git commit failed: ${moved.stderr}` };
+        }
+
+        runGit(root, ['reset', '-q', '--', ...paths]);
+
+        return { committed: true, error: null };
+    } finally {
+        rmSync(indexPath, { force: true });
+    }
 }
 
 /**

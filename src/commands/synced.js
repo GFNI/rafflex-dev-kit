@@ -4,7 +4,7 @@ import { payloadMismatch, recordProductState, versionAfterSync } from '../record
 import { callSyncLink, parseSyncLink, productAndLink, SyncLinkError } from '../sync-link.js';
 import { unwrapProductPayload } from '../sync-state.js';
 import { loadWorkspace, selectProduct } from '../workspace.js';
-import { fail, messageOf, writeJson } from './output.js';
+import { failWithCode, messageOf, writeJson } from './output.js';
 
 export { versionAfterSync };
 
@@ -30,7 +30,7 @@ export async function readLinkState(workspace, raw) {
  * @param {SyncLinkError} error
  */
 export function failWithLinkError(context, error) {
-    return fail(context, error.message, error.exitCode, { code: error.code, ...(error.issues === undefined ? {} : { issues: error.issues }) });
+    return failWithCode(context, error.toJSON(), error.exitCode);
 }
 
 /**
@@ -65,7 +65,7 @@ export async function runSyncedCommand(context) {
         workspace = loadWorkspace(cwd);
         product = selectProduct(workspace, name, cwd);
     } catch (error) {
-        return fail(context, messageOf(error), 2);
+        return failWithCode(context, { code: 'cannot_run', message: messageOf(error) }, 2);
     }
 
     /** @type {Record<string, any>|null} */
@@ -90,7 +90,7 @@ export async function runSyncedCommand(context) {
         }
 
         if (payload === null) {
-            return fail(context, `That link is for a product not on the marketplace yet. Push ${product.path} with npx @rafflex/dev push ${product.slug ?? product.path} "<sync_url>" to create it.`, 1, { code: 'not_created' });
+            return failWithCode(context, { code: 'not_created', message: `That link is for a product not on the marketplace yet. Push ${product.path} with npx @rafflex/dev push ${product.slug ?? product.path} "<sync_url>" to create it.` }, 1);
         }
     } else {
         const input = await readAll(stdin);
@@ -100,25 +100,33 @@ export async function runSyncedCommand(context) {
         try {
             parsed = JSON.parse(input);
         } catch {
-            return fail(context, input.trim() === ''
-                ? `Give this command a sync link from request_sync: npx @rafflex/dev synced ${product.slug ?? product.path} "<sync_url>". Pipe the get_product result for ${product.title} to it instead only when your AI app has no shell.`
-                : 'Standard input is not JSON. Pipe the get_product result exactly as the tool returned it.', 2);
+            return failWithCode(context, input.trim() === ''
+                ? { code: 'no_link', message: `Give this command a sync link from request_sync: npx @rafflex/dev synced ${product.slug ?? product.path} "<sync_url>". Pipe the get_product result for ${product.title} to it instead only when your AI app has no shell.` }
+                : { code: 'invalid_input', message: 'Standard input is not JSON. Pipe the get_product result exactly as the tool returned it.' }, 2);
         }
 
         payload = unwrapProductPayload(parsed);
 
         if (payload === null) {
-            return fail(context, 'Standard input is not a get_product result (it has no slug and type). Pipe the tool\'s structured result.', 2);
+            return failWithCode(context, { code: 'invalid_input', message: 'Standard input is not a get_product result (it has no slug and type). Pipe the tool\'s structured result.' }, 2);
         }
     }
 
     const mismatch = payloadMismatch(product, payload, source);
 
     if (mismatch !== null) {
-        return fail(context, mismatch.message, mismatch.exitCode);
+        return failWithCode(context, { code: mismatch.exitCode === 2 ? 'invalid_input' : (link === undefined ? 'wrong_product' : 'wrong_link'), message: mismatch.message }, mismatch.exitCode);
     }
 
-    const recorded = recordProductState({ workspace, product, payload, feedback, kind: 'auto' });
+    /** @type {import('../record-sync.js').RecordedState} */
+    let recorded;
+
+    try {
+        recorded = recordProductState({ workspace, product, payload, feedback, kind: 'auto' });
+    } catch (error) {
+        return failWithCode(context, { code: 'unexpected_response', message: messageOf(error) }, 2);
+    }
+
     const shown = productFeedback(/** @type {any} */ (recorded.remote));
 
     if (options.json) {

@@ -66,6 +66,16 @@ function kindOf(filename) {
 }
 
 /**
+ * A tag name's key, as the marketplace matches tags: lower case words of
+ * letters and numbers joined by hyphens.
+ *
+ * @param {string} name
+ */
+function tagKey(name) {
+    return name.toLowerCase().replace(/[_\s-]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+}
+
+/**
  * A stand in marketplace for the sync loop: the public /dev-kit documents
  * (from test/fixtures/endpoints), sync links (GET reads a product, POST
  * pushes to it) and upload links (PUT stores a file), with the response
@@ -96,6 +106,10 @@ export async function startFakeMarketplace() {
         feedback: /** @type {Record<string, any>|null} */ (null),
     };
     let baseUrl = '';
+    /** Every tag the marketplace knows, by key, with the spelling it was first created with (tags are shared by every product). */
+    const tags = new Map();
+    const uploadRules = JSON.parse(readFileSync(new URL('rules.json', endpointsDirectory), 'utf8')).upload_rules;
+    const filenamePattern = new RegExp(uploadRules.filename_pattern.pattern, uploadRules.filename_pattern.flags);
 
     const send = (/** @type {import('node:http').ServerResponse} */ response, /** @type {number} */ status, /** @type {any} */ body, /** @type {Record<string, string>} */ headers = {}) => {
         response.writeHead(status, { 'Content-Type': 'application/json', ...headers }).end(JSON.stringify(body));
@@ -137,6 +151,19 @@ export async function startFakeMarketplace() {
             return;
         }
 
+        // The request's own rules: each upload's file name.
+        const filenameIssues = (Array.isArray(body.uploads) ? body.uploads : []).flatMap((/** @type {any} */ upload, /** @type {number} */ index) => (
+            typeof upload?.filename === 'string' && upload.filename.length <= uploadRules.max_filename_length && filenamePattern.test(upload.filename)
+                ? []
+                : [{ code: 'invalid_argument', field: `uploads.${index}.filename`, message: uploadRules.refusals.invalid_filename }]
+        ));
+
+        if (filenameIssues.length > 0) {
+            refuse(response, 422, 'validation_failed', 'The push was refused, and nothing changed. Fix every issue and push again.', { issues: filenameIssues });
+
+            return;
+        }
+
         const issues = behaviour.validate?.(body) ?? null;
 
         if (issues !== null && issues.length > 0) {
@@ -170,6 +197,12 @@ export async function startFakeMarketplace() {
 
                 return;
             }
+        }
+
+        if (writesDraft(product, body) && typeof body.version === 'string' && product.versions.some((/** @type {any} */ entry) => entry.version === body.version)) {
+            refuse(response, 422, 'validation_failed', 'The push was refused, and nothing changed. Fix every issue and push again.', { issues: [{ code: 'invalid_argument', field: 'version', message: 'This asset already has that version number.' }] });
+
+            return;
         }
 
         if (writesDraft(product, body)) {
@@ -206,7 +239,19 @@ export async function startFakeMarketplace() {
             }
 
             if (Array.isArray(listing.tag_names)) {
-                product.tags = listing.tag_names;
+                // Matched by key: an existing tag keeps its first spelling, and two spellings of one tag are one tag.
+                const names = [...new Set(listing.tag_names.map((/** @type {string} */ name) => String(name).trim()).filter((/** @type {string} */ name) => name !== '' && name !== '0'))];
+                const keys = [...new Set(names.map((name) => {
+                    const key = tagKey(name);
+
+                    if (!tags.has(key)) {
+                        tags.set(key, name);
+                    }
+
+                    return key;
+                }))];
+
+                product.tags = keys.map((key) => tags.get(key));
             }
         }
 
@@ -394,6 +439,7 @@ export async function startFakeMarketplace() {
         requests,
         behaviour,
         products,
+        tags,
         /**
          * Seed a product the marketplace holds.
          *

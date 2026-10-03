@@ -1,6 +1,7 @@
 import { createReadStream, statSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { isSlug } from './safe-paths.js';
 import { kitVersion } from './version.js';
 
 /**
@@ -323,19 +324,19 @@ export function refusalFrom(response) {
     }
 
     if (status === 403 || status === 401) {
-        return new SyncLinkError('forbidden', `${message ?? 'The marketplace refused this link.'} ${newLinkAdvice}`, { status });
+        return new SyncLinkError('forbidden', `${message ?? 'The marketplace refused this link.'} ${newLinkAdvice}`, { exitCode: 1, status });
     }
 
     if (status === 429) {
         const seconds = retryAfter(error, response.headers);
         const wait = seconds === null ? 'a minute' : `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
 
-        return new SyncLinkError('rate_limited', `The marketplace is limiting how often this account pushes. Wait ${wait}, then run the command again (the same link works until it expires, or ask for a new one with request_sync).`, { status, retryAfterSeconds: seconds });
+        return new SyncLinkError('rate_limited', `The marketplace is limiting how often this account pushes. Wait ${wait}, then run the command again (the same link works until it expires, or ask for a new one with request_sync).`, { exitCode: 1, status, retryAfterSeconds: seconds });
     }
 
     if (status === 409) {
         const text = message ?? 'The draft on the marketplace changed since this workspace last read it, so nothing was applied.';
-        const route = /export_product/.test(text) ? '' : ' Commit your work, bring the product local again with export_product and npx @rafflex/dev import <bundle_url> --force, apply your change on top, then push again.';
+        const route = /export_product/.test(text) ? '' : ' Commit your work, bring the product local again with export_product and npx @rafflex/dev import "<bundle_url>" --force, apply your change on top, then push again.';
 
         return new SyncLinkError('conflict', `${text}${route}`, { exitCode: 1, status });
     }
@@ -390,6 +391,11 @@ export async function callSyncLink(link, method, payload) {
     const product = document.product !== null && typeof document.product === 'object' && typeof document.product.slug === 'string' && typeof document.product.type === 'string'
         ? document.product
         : null;
+
+    // The slug becomes a folder name: refuse one that could leave the workspace.
+    if (product !== null && !isSlug(product.slug)) {
+        throw new SyncLinkError('unexpected_response', `The marketplace answered with "${product.slug}" as the product's slug, which is not a valid slug, so nothing was recorded. Contact support@rafflex.io.`);
+    }
 
     return {
         ...document,

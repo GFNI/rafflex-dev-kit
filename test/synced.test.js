@@ -84,11 +84,13 @@ describe('synced', () => {
         const notProduct = await runJson(['synced', 'spin-to-win'], { cwd: root, input: '{"items": []}' });
 
         assert.equal(otherSlug.code, 1);
-        assert.match(otherSlug.output.error, /is for other-game, but games\/spin-to-win is spin-to-win/);
+        assert.equal(otherSlug.output.error.code, 'wrong_product');
+        assert.match(otherSlug.output.error.message, /is for other-game, but games\/spin-to-win is spin-to-win/);
         assert.equal(otherType.code, 1);
-        assert.match(otherType.output.error, /is for a game \(spin-to-win\), but blocks\/winner-wall is a block/);
+        assert.match(otherType.output.error.message, /is for a game \(spin-to-win\), but blocks\/winner-wall is a block/);
         assert.equal(empty.code, 2);
-        assert.match(empty.output.error, /Pipe the get_product result/);
+        assert.equal(empty.output.error.code, 'no_link');
+        assert.match(empty.output.error.message, /Pipe the get_product result/);
         assert.equal(notProduct.code, 2);
         assert.equal(productJson(root, 'games/spin-to-win').remote, null);
     });

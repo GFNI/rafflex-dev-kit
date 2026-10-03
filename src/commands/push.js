@@ -1,17 +1,17 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isBlocking } from '../checker.js';
 import { productFeedback } from '../feedback.js';
 import { readListingImages } from '../listing-images.js';
-import { payloadMismatch, recordProductState } from '../record-sync.js';
+import { payloadMismatch, recordProductState, UnsafeSlugError } from '../record-sync.js';
 import { loadDocuments } from '../remote.js';
 import { submissionLines, submissionStatus } from '../submission.js';
 import { batchSizeFrom, buildPushRequest, inBatches, remoteForPlan, uploadKey } from '../push-request.js';
 import { callSyncLink, checkedUploadUrl, parseSyncLink, productAndLink, SyncLinkError, uploadFile, uploadOrigins } from '../sync-link.js';
-import { optionOverridesHash, readLocalState, templateHash } from '../sync-state.js';
-import { loadWorkspace, productFilename, readTemplate, resultsDirectoryName, selectProduct, withManifest, writeProductJson } from '../workspace.js';
+import { formatProductJson, loadWorkspace, readTemplate, resultsDirectoryName, selectProduct, withManifest, writeProductJson } from '../workspace.js';
+import { optionOverridesHash, readLocalState, remoteFromProduct, templateHash } from '../sync-state.js';
 import { assetDocuments, buildPlan } from './plan.js';
-import { saveVerifyResult, verifyProducts } from './verify.js';
+import { productFilesFingerprint, rulesFingerprint, saveVerifyResult, verifyProducts } from './verify.js';
 import { messageOf, writeJson } from './output.js';
 
 /**
@@ -20,10 +20,15 @@ import { messageOf, writeJson } from './output.js';
  * request_sync. The link is never written to disk.
  *
  * 1. Read the product's state from the link (GET).
- * 2. Refuse when the draft changed on the marketplace since the last sync
- *    and the folder's template or options differ from it (`conflict`).
- * 3. verify, reusing `.results/verify.json` when nothing in the folder
- *    changed since it was written; refuse while anything blocks.
+ * 2. Refuse a link for an existing product when the folder was never
+ *    pushed (`wrong_link`), and refuse when the draft changed on the
+ *    marketplace since the last sync (another draft version, or another
+ *    revision) and the folder's template or options differ from it
+ *    (`conflict`).
+ * 3. verify, reusing `.results/verify.json` only when no file in the
+ *    folder was added, changed, or deleted since and the platform's rules
+ *    and the kit are the ones it was made with; refuse while anything
+ *    blocks.
  * 4. Plan against the state just read and POST only what changed: the
  *    template, option overrides, version, release notes, listing,
  *    approved libraries, `screenshots_keep`, and the files to upload.
@@ -32,21 +37,31 @@ import { messageOf, writeJson } from './output.js';
  *    batches of `max_files_per_batch` (each later batch is another POST
  *    with only its uploads).
  * 6. Read the state again and record it exactly as `synced` does, then
- *    commit the product folder as "Push <slug> <version> (draft revision <n>)".
+ *    commit the product folder as "Push <slug> <version> (draft revision
+ *    <n>)", or "(draft revision <n>, <k> files not uploaded)" with those
+ *    files kept out of the commit, so they still show as changes and
+ *    `restore last-push` treats them as unpushed. A push that changed
+ *    nothing on the marketplace makes no Push commit.
  *
- * Exit 0 when pushed or nothing to push, 1 when refused (verify blocks, a
- * conflict, the marketplace's validation, or a file that did not upload),
- * 2 when it cannot run (no link, an expired or unreachable link).
+ * Exit 0 when pushed or nothing to push; 1 when refused for a reason the
+ * AI can fix or wait out (not_ready, conflict, in_review, wrong_link,
+ * validation_failed, upload_failed, rate_limited, forbidden); 2 when it
+ * cannot run (no_link, invalid_link, expired, unreachable, cannot_run,
+ * unexpected_response, unsupported).
  *
- * JSON: `{product, pushed, created, nothing_to_push, slug, version, revision,
- * changed: {template, options, listing}, uploaded: [{path, purpose, tag}],
- * attached: [{library, tag}], removed_screenshots, check, submission,
- * suggested_version, feedback, not_uploaded, refusals, notes, git, error?}`.
+ * JSON: `{product, renamed_from, pushed, created, nothing_to_push, slug,
+ * version, revision, changed: {template, options, listing}, uploaded:
+ * [{path, purpose, tag}], attached: [{library, tag}], removed_screenshots,
+ * check, submission, suggested_version, feedback, not_uploaded, refusals,
+ * notes, git, link, commit_message, error?: {code, message, issues?,
+ * retry_after_seconds?}}`. An issue about a file to upload carries `path`,
+ * the file in the product folder.
  */
 
 /**
  * @typedef {object} PushResult
  * @property {string} product
+ * @property {string|null} renamed_from  The product's path before this push renamed its folder to the slug.
  * @property {boolean} pushed
  * @property {boolean} created
  * @property {boolean} nothing_to_push
@@ -71,57 +86,31 @@ import { messageOf, writeJson } from './output.js';
  */
 
 /**
- * The newest change inside a product folder, outside `.results/` and the
- * product.json the kit itself rewrites with the marketplace's state.
- *
- * @param {string} directory
- * @param {boolean} [top]
- * @returns {number}
- */
-function newestChange(directory, top = true) {
-    let newest = 0;
-
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        if (top && (entry.name === resultsDirectoryName || entry.name === productFilename)) {
-            continue;
-        }
-
-        const path = join(directory, entry.name);
-
-        try {
-            newest = Math.max(newest, statSync(path).mtimeMs);
-        } catch {
-            continue;
-        }
-
-        if (entry.isDirectory()) {
-            newest = Math.max(newest, newestChange(path, false));
-        }
-    }
-
-    return newest;
-}
-
-/**
- * The saved verify result when nothing in the folder changed since it was
- * written, else null.
+ * The saved verify result when it still holds: no file in the folder was
+ * added, changed, or deleted since it was written (outside `.results/` and
+ * product.json), and it was judged against the same platform rules and
+ * kit (`rules`). Otherwise null, and push runs verify again.
  *
  * @param {import('../workspace.js').Product} product
+ * @param {string} rules The current rules fingerprint (rulesFingerprint).
  * @returns {any}
  */
-export function freshVerifyResult(product) {
+export function freshVerifyResult(product, rules) {
     const path = join(product.directory, resultsDirectoryName, 'verify.json');
 
     try {
-        const written = statSync(path).mtimeMs;
+        const result = JSON.parse(readFileSync(path, 'utf8'));
+        const against = result?.verified_against;
 
-        if (newestChange(product.directory) > written) {
+        if (typeof result?.ready !== 'boolean' || !Array.isArray(result.issues) || against === null || typeof against !== 'object') {
             return null;
         }
 
-        const result = JSON.parse(readFileSync(path, 'utf8'));
+        if (against.rules !== rules || against.files !== productFilesFingerprint(product.directory)) {
+            return null;
+        }
 
-        return typeof result?.ready === 'boolean' && Array.isArray(result.issues) ? result : null;
+        return result;
     } catch {
         return null;
     }
@@ -141,21 +130,21 @@ export function freshVerifyResult(product) {
  * @returns {Promise<PushVerify>}
  */
 async function verifyForPush(workspace, product, progress) {
-    const saved = freshVerifyResult(product);
-
-    if (saved !== null) {
-        const blocking = saved.issues.filter(isBlocking);
-
-        return { ready: saved.ready && blocking.length === 0, reused: true, browser_tests: saved.browser_tests ?? null, blocking_issues: blocking, warning_count: saved.issues.length - blocking.length };
-    }
-
     try {
+        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl });
+        const saved = freshVerifyResult(product, rulesFingerprint(loaded));
+
+        if (saved !== null) {
+            const blocking = saved.issues.filter(isBlocking);
+
+            return { ready: saved.ready && blocking.length === 0, reused: true, browser_tests: saved.browser_tests ?? null, blocking_issues: blocking, warning_count: saved.issues.length - blocking.length };
+        }
+
         progress(`Verifying ${product.path}`);
 
-        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl });
         const [result] = await verifyProducts({ workspace: withManifest(workspace, loaded.manifest), loaded, products: [product] });
 
-        saveVerifyResult(product, result);
+        saveVerifyResult(product, result, loaded);
 
         if (result.check.error !== undefined) {
             return { ready: false, reused: false, browser_tests: null, blocking_issues: [], warning_count: 0, error: result.check.error };
@@ -187,11 +176,11 @@ function differsFromDraft(product, draft) {
 /**
  * One issue line, the way check prints issues.
  *
- * @param {{code: string, field?: string, line?: number, message: string, fix?: string, severity?: string, blocking?: boolean}} issue
+ * @param {{code: string, field?: string, path?: string, line?: number, message: string, fix?: string, severity?: string, blocking?: boolean}} issue
  * @returns {string[]}
  */
 function issueLines(issue) {
-    const where = [issue.field, issue.line ? `line ${issue.line}` : null].filter(Boolean).join(', ');
+    const where = [issue.path ?? issue.field, issue.line ? `line ${issue.line}` : null].filter(Boolean).join(', ');
     const label = issue.severity === 'warning' || issue.blocking === false ? 'warning' : 'error  ';
 
     return [`  ${label} [${issue.code}]${where === '' ? '' : ` ${where}`}: ${issue.message}`, ...(issue.fix ? [`          Fix: ${issue.fix}`] : [])];
@@ -222,6 +211,7 @@ export async function runPushCommand(context) {
     /** @type {PushResult} */
     const result = {
         product: product.path,
+        renamed_from: null,
         pushed: false,
         created: false,
         nothing_to_push: false,
@@ -280,6 +270,13 @@ export async function runPushCommand(context) {
         return report(context, result, { code: 'wrong_link', message: `That link is for a new product, but ${product.path} is already on the marketplace as ${product.slug}, so nothing was sent. Ask your AI to call request_sync with slug ${product.slug}, then run the command again.` }, 1, lines);
     }
 
+    if (payload !== null && product.slug === null) {
+        return report(context, result, {
+            code: 'wrong_link',
+            message: `That link is for ${payload.slug}, which is already on the marketplace, but ${product.path} has never been pushed, so nothing was sent. To create a new product from ${product.path}, ask your AI to call request_sync with no slug and push with that link. To work on ${payload.slug} here instead, bring it local with export_product and npx @rafflex/dev import "<bundle_url>". Only if ${product.path} really is ${payload.slug}, record that first with npx @rafflex/dev synced ${product.path} "<sync_url>", then push.`,
+        }, 1, lines);
+    }
+
     if (payload !== null) {
         const mismatch = payloadMismatch(product, payload, 'That link');
 
@@ -294,15 +291,20 @@ export async function runPushCommand(context) {
         return report(context, result, { code: 'in_review', message: `${payload?.slug} ${freshDraft.version ?? ''} is in review, and cannot be changed until the decision. Nothing was sent. Record the decision later with npx @rafflex/dev synced ${label} "<sync_url>".` }, 1, lines);
     }
 
-    // 2. Refuse to overwrite a draft changed elsewhere.
-    const recordedRevision = product.manifest.remote?.draft?.revision ?? null;
+    // 2. Refuse to overwrite a draft changed elsewhere. Revisions restart
+    // at 1 for every new draft, so the version and the revision together
+    // name the draft this workspace last saw.
+    const recordedDraft = product.manifest.remote?.draft ?? null;
 
-    if (freshDraft !== null && freshDraft.revision !== recordedRevision && differsFromDraft(product, freshDraft)) {
-        const since = recordedRevision === null ? 'which this workspace has never recorded' : `and this workspace last recorded revision ${recordedRevision}`;
+    if (freshDraft !== null && draftChangedElsewhere(recordedDraft, freshDraft) && differsFromDraft(product, freshDraft)) {
+        const otherVersion = recordedDraft !== null && recordedDraft.version !== freshDraft.version;
+        const since = recordedDraft === null || recordedDraft.revision === null
+            ? 'which this workspace has never recorded'
+            : `and this workspace last recorded revision ${recordedDraft.revision}${otherVersion ? ` of ${recordedDraft.version}` : ''}`;
 
         return report(context, result, {
             code: 'conflict',
-            message: `The draft of ${payload?.slug} on the marketplace is at revision ${freshDraft.revision}, ${since}, and ${product.path} has a different template or options, so nothing was sent. Commit your work first, then bring the marketplace's draft here with export_product and npx @rafflex/dev import <bundle_url> --force, apply your change on top, and push again.`,
+            message: `The draft of ${payload?.slug} on the marketplace is at revision ${freshDraft.revision}${otherVersion ? ` of ${freshDraft.version}` : ''}, ${since}, and ${product.path} has a different template or options, so nothing was sent. Commit your work first, then bring the marketplace's draft here with export_product and npx @rafflex/dev import "<bundle_url>" --force, apply your change on top, and push again.`,
         }, 1, lines);
     }
 
@@ -328,7 +330,7 @@ export async function runPushCommand(context) {
         built = buildPlan(planned, documents);
         request = buildPushRequest({ product, payload, plan: built.plan, template: readTemplate(product), listingImages: readListingImages(product.directory), documents });
     } catch (error) {
-        return report(context, result, { code: 'cannot_run', message: messageOf(error) }, 1, lines);
+        return report(context, result, { code: 'cannot_run', message: messageOf(error) }, 2, lines);
     }
 
     const plan = /** @type {any} */ (built.plan);
@@ -356,7 +358,7 @@ export async function runPushCommand(context) {
         if (payload !== null) {
             const recorded = recordProductState({ workspace, product, payload, feedback: state.feedback, kind: 'auto' });
 
-            finishFromRecord(result, recorded, documents);
+            finishFromRecord(result, recorded, documents, product.path);
         }
 
         return report(context, result, null, 0, lines);
@@ -382,12 +384,23 @@ export async function runPushCommand(context) {
             progress(index === 0 ? `Pushing ${product.path}` : `Requesting upload links (batch ${index + 1} of ${batches.length})`);
             answer = await callSyncLink(link, 'POST', body);
         } catch (error) {
+            const issues = error instanceof SyncLinkError && error.issues !== undefined ? withUploadPaths(error.issues, batch) : [];
+
             if (index === 0) {
+                if (error instanceof SyncLinkError && error.issues !== undefined) {
+                    error.issues = issues;
+                }
+
                 return reportLinkError(context, result, error, lines);
             }
 
             result.notes.push(`The upload links for the remaining files were refused: ${messageOf(error)}`);
-            result.not_uploaded.push(...batches.slice(index).flat().map((upload) => ({ path: upload.path, purpose: upload.request.purpose, tag: upload.request.tag ?? null, message: 'not sent' })));
+            result.not_uploaded.push(...batches.slice(index).flat().map((upload) => ({
+                path: upload.path,
+                purpose: upload.request.purpose,
+                tag: upload.request.tag ?? null,
+                message: issues.filter((issue) => issue.path === upload.path).map((issue) => issue.message).join(' ') || 'not sent',
+            })));
             stopped = true;
             break;
         }
@@ -453,10 +466,32 @@ export async function runPushCommand(context) {
         result.notes.push(`Could not read the product again (${messageOf(error)}), so the state the push answered with is recorded. Run npx @rafflex/dev synced ${label} "<sync_url>" to refresh it.`);
     }
 
-    if (finalProduct !== null) {
-        const recorded = recordProductState({ workspace, product, payload: finalProduct, feedback: latestFeedback, kind: 'push' });
+    result.check = withoutLandedFileTags(result.check, [
+        ...result.uploaded.filter((entry) => entry.purpose === 'library').map((entry) => entry.tag),
+        ...result.attached.map((entry) => entry.tag),
+    ]);
 
-        finishFromRecord(result, recorded, documents);
+    if (finalProduct !== null) {
+        // A push the marketplace answered with exactly the state it had
+        // before changed nothing, so it is not a new restore point.
+        const landed = payload === null || sameRemoteState(payload, finalProduct) === false;
+        const notUploaded = [...result.not_uploaded.map((entry) => entry.path), ...plan.refusals.map((/** @type {any} */ refusal) => refusal.path)];
+
+        try {
+            const recorded = recordProductState({ workspace, product, payload: finalProduct, feedback: latestFeedback, kind: landed ? 'push' : 'auto', notUploaded: landed ? notUploaded : [] });
+
+            finishFromRecord(result, recorded, documents, product.path);
+        } catch (error) {
+            if (!(error instanceof UnsafeSlugError)) {
+                throw error;
+            }
+
+            return report(context, result, { code: 'unexpected_response', message: messageOf(error) }, 2, lines);
+        }
+
+        if (!landed) {
+            result.notes.push('The marketplace already had everything this push sent, so nothing changed there.');
+        }
     }
 
     result.suggested_version = result.suggested_version ?? result.check?.suggested_version ?? null;
@@ -464,11 +499,81 @@ export async function runPushCommand(context) {
     if (stopped || result.not_uploaded.length > 0) {
         return report(context, result, {
             code: 'upload_failed',
-            message: `The draft was pushed, but ${result.not_uploaded.length} ${result.not_uploaded.length === 1 ? 'file was' : 'files were'} not uploaded: ${result.not_uploaded.map((entry) => `${entry.path} (${entry.message})`).join('; ')}. Run npx @rafflex/dev push ${result.slug ?? label} "<sync_url>" again (the same link while it works, or a new one from request_sync): it sends only what is still missing.`,
+            message: `The draft was pushed, but ${result.not_uploaded.length} ${result.not_uploaded.length === 1 ? 'file was' : 'files were'} not uploaded: ${result.not_uploaded.map((entry) => `${entry.path} (${entry.message})`).join('; ')}. They still show as changes, and the commit says so. Fix them, then run npx @rafflex/dev push ${result.slug ?? label} "<sync_url>" again (the same link while it works, or a new one from request_sync): it sends only what is still missing.`,
         }, 1, lines);
     }
 
     return report(context, result, null, 0, lines);
+}
+
+/**
+ * Whether the draft read from the marketplace changed since this
+ * workspace recorded it: another draft (a new version, or a draft where
+ * none was recorded) or another revision of the same one.
+ *
+ * @param {{version?: string|null, revision?: number|null}|null} recorded
+ * @param {Record<string, any>} fresh
+ */
+export function draftChangedElsewhere(recorded, fresh) {
+    if (recorded === null) {
+        return true;
+    }
+
+    return (recorded.version ?? null) !== (fresh.version ?? null) || (recorded.revision ?? null) !== (fresh.revision ?? null);
+}
+
+/**
+ * Whether two get_product payloads record the same marketplace state.
+ *
+ * @param {Record<string, any>} before
+ * @param {Record<string, any>} after
+ */
+function sameRemoteState(before, after) {
+    const at = new Date(0);
+
+    return formatProductJson({ remote: remoteFromProduct(before, at) }) === formatProductJson({ remote: remoteFromProduct(after, at) });
+}
+
+/**
+ * The marketplace's issues with each one about a file to upload
+ * (`uploads.<n>…`, numbered within the request) pointing at that file in
+ * the product folder.
+ *
+ * @param {import('../sync-link.js').SyncIssue[]} issues
+ * @param {import('../push-request.js').PlannedUpload[]} batch
+ * @returns {(import('../sync-link.js').SyncIssue & {path?: string})[]}
+ */
+export function withUploadPaths(issues, batch) {
+    return issues.map((issue) => {
+        const match = typeof issue.field === 'string' ? issue.field.match(/^uploads\.(\d+)(?:\.|$)/) : null;
+        const upload = match === null ? undefined : batch[Number(match[1])];
+
+        return upload === undefined ? issue : { ...issue, path: upload.path };
+    });
+}
+
+/**
+ * The marketplace's check of the draft, answered before the files were
+ * uploaded, without the unknown_file_tag warnings for tags this push
+ * uploaded or attached: those files are there now.
+ *
+ * @param {any} check
+ * @param {(string|null)[]} landedTags
+ * @returns {any}
+ */
+export function withoutLandedFileTags(check, landedTags) {
+    if (check === null || typeof check !== 'object' || !Array.isArray(check.issues) || landedTags.length === 0) {
+        return check;
+    }
+
+    const issues = check.issues.filter((/** @type {any} */ issue) => {
+        const key = issue?.code === 'unknown_file_tag' ? String(issue.message ?? '').match(/files\['([^']+)'\]/)?.[1] : undefined;
+
+        return key === undefined || !landedTags.includes(key);
+    });
+    const blocks = (/** @type {any} */ issue) => (typeof issue?.blocking === 'boolean' ? issue.blocking : isBlocking(issue));
+
+    return { ...check, issues, passed: check.passed === false && issues.every((/** @type {any} */ issue) => !blocks(issue)) ? true : check.passed };
 }
 
 /**
@@ -477,9 +582,11 @@ export async function runPushCommand(context) {
  * @param {PushResult} result
  * @param {import('../record-sync.js').RecordedState} recorded
  * @param {{rules?: any, libraries?: any, categories?: any}} documents
+ * @param {string} startedAs The product's path when the push started.
  */
-function finishFromRecord(result, recorded, documents) {
+function finishFromRecord(result, recorded, documents, startedAs) {
     result.product = recorded.path;
+    result.renamed_from = recorded.path === startedAs ? null : startedAs;
     result.slug = recorded.slug;
     result.version = recorded.version;
     result.revision = Number.isInteger(recorded.remote.draft?.revision) ? recorded.remote.draft.revision : null;

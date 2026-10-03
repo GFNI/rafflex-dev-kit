@@ -38,7 +38,7 @@ export async function runRestoreCommand(context) {
     }
 
     const label = product.slug ?? product.folder;
-    const exportFallback = `Read the product with export_product, then run npx @rafflex/dev import <bundle_url> --force to replace ${product.path} with the marketplace's copy.`;
+    const exportFallback = `Read the product with export_product, then run npx @rafflex/dev import "<bundle_url>" --force to replace ${product.path} with the marketplace's copy.`;
     const pushed = gitState(workspace.root).repository ? lastPushCommit(workspace.root, product.directory, label) : null;
 
     if (pushed === null) {
