@@ -292,18 +292,26 @@ function commitHoldingBack(root, paths, message, holdBack) {
     }
 }
 
+/** The kit's commits that leave a product folder matching the marketplace. */
+export const pushVerbs = Object.freeze(['Push', 'Release', 'Import', 'Revert']);
+
+/** Every kit commit that records the marketplace's state, a state only Sync included. */
+export const recordVerbs = Object.freeze([...pushVerbs, 'Sync']);
+
 /**
  * The newest commit whose product folder matches the marketplace: the
- * kit's own Push, Release, Import, and Revert commits for that product.
+ * kit's own Push, Release, Import, and Revert commits for that product
+ * (pass `verbs` to search for others).
  *
  * @param {string} root
  * @param {string} directory
  * @param {string} name The product's slug (or folder name).
+ * @param {readonly string[]} [verbs]
  * @returns {{commit: string, subject: string}|null}
  */
-export function lastPushCommit(root, directory, name) {
+export function lastPushCommit(root, directory, name, verbs = pushVerbs) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const log = runGit(root, ['log', '--format=%H%x09%s', '-E', `--grep=^(Push|Release|Import|Revert) ${escaped}( |$)`, '--', relative(root, directory) || '.']);
+    const log = runGit(root, ['log', '--format=%H%x09%s', '-E', `--grep=^(${verbs.join('|')}) ${escaped}( |$)`, '--', relative(root, directory) || '.']);
 
     if (!log.ok) {
         return null;
@@ -321,42 +329,69 @@ export function lastPushCommit(root, directory, name) {
 }
 
 /**
+ * A file as a commit holds it, or null when it does not. `file` is
+ * relative to `root`, which may sit anywhere inside the repository.
+ *
+ * @param {string} root
+ * @param {string} commit
+ * @param {string} file
+ * @returns {string|null}
+ */
+export function fileAt(root, commit, file) {
+    const shown = runGit(root, ['show', `${commit}:./${file.split('\\').join('/')}`]);
+
+    return shown.ok ? shown.stdout : null;
+}
+
+/**
+ * Pathspecs for a product folder without tests/ and any `keep` files.
+ *
+ * @param {string} path
+ * @param {string[]} keep File names inside the folder to leave alone.
+ */
+function folderPathspecs(path, keep) {
+    return [path, `:(exclude)${path}/tests`, ...keep.map((file) => `:(exclude)${path}/${file}`)];
+}
+
+/**
  * Return a product folder to a commit: tracked files as they were, files
- * added since removed, with tests/ and ignored output left alone.
+ * added since removed, with tests/, ignored output, and the `keep` files
+ * left alone.
  *
  * @param {string} root
  * @param {string} directory
  * @param {string} commit
+ * @param {string[]} [keep] File names inside the folder to leave as they are.
  * @returns {{ok: boolean, error?: string}}
  */
-export function restoreProductFolder(root, directory, commit) {
-    const path = relative(root, directory) || '.';
-    const keep = `:(exclude)${path}/tests`;
-    const restored = runGit(root, ['restore', `--source=${commit}`, '--staged', '--worktree', '--', path, keep]);
+export function restoreProductFolder(root, directory, commit, keep = []) {
+    const pathspecs = folderPathspecs(relative(root, directory) || '.', keep);
+    const restored = runGit(root, ['restore', `--source=${commit}`, '--staged', '--worktree', '--', ...pathspecs]);
 
     if (!restored.ok) {
         return { ok: false, error: `git restore failed: ${restored.stderr}` };
     }
 
-    const cleaned = runGit(root, ['clean', '-fdq', '--', path, keep]);
+    const cleaned = runGit(root, ['clean', '-fdq', '--', ...pathspecs]);
 
     return cleaned.ok ? { ok: true } : { ok: false, error: `git clean failed: ${cleaned.stderr}` };
 }
 
 /**
  * The product folder's changes since a commit (tracked and untracked),
- * outside tests/, as "M template.twig" style lines.
+ * outside tests/ and the `keep` files, as "M template.twig" style lines.
  *
  * @param {string} root
  * @param {string} directory
  * @param {string} commit
+ * @param {string[]} [keep]
  * @returns {string[]}
  */
-export function changesSince(root, directory, commit) {
+export function changesSince(root, directory, commit, keep = []) {
     const path = relative(root, directory) || '.';
-    const keep = `:(exclude)${path}/tests`;
-    const tracked = runGit(root, ['diff', '--relative', '--name-status', commit, '--', path, keep]).stdout.split('\n').filter(Boolean);
-    const untracked = runGit(root, ['ls-files', '--others', '--exclude-standard', '--', path, keep]).stdout.split('\n').filter(Boolean).map((file) => `A\t${file}`);
+    const pathspecs = folderPathspecs(path, keep);
+    const tracked = runGit(root, ['diff', '--relative', '--name-status', commit, '--', ...pathspecs]).stdout.split('\n').filter(Boolean);
+    const untracked = runGit(root, ['ls-files', '--others', '--exclude-standard', '--', ...pathspecs]).stdout.split('\n').filter(Boolean).map((file) => `A\t${file}`);
 
     return [...tracked, ...untracked].map((line) => {
         const [status, file] = line.split('\t');
