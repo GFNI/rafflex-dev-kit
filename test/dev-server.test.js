@@ -138,7 +138,7 @@ describe('dev server', () => {
         assert.ok(scriptSources.includes(librariesSource), csp);
         assert.equal(scriptSources.includes(assets), false, csp);
         assert.equal(csp.includes('/media/models/'), false, csp);
-        assert.equal(csp.replace(librariesSource, '').includes('marketplace.rafflex.io.test'), false, csp);
+        assert.equal(/\.test(?![\w-])/.test(csp.replace(librariesSource, '')), false, csp);
     });
 
     test('shows a render error inside the frame', async () => {
