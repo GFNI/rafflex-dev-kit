@@ -1,5 +1,5 @@
 {
-    "version": "bc13b4388267",
+    "version": "25eb8113e2d6",
     "sandbox": {
         "tags": [
             "if",
@@ -500,7 +500,7 @@
             "'self'",
             "'unsafe-inline'",
             "'unsafe-eval'",
-            "https://marketplace.rafflex.io.test/media/libraries/"
+            "https://marketplace.rafflex.io/media/libraries/"
         ],
         "style-src": [
             "'self'",
@@ -510,7 +510,7 @@
             "'self'",
             "data:",
             "blob:",
-            "https://marketplace.rafflex.io.test"
+            "https://static.rafflex.io"
         ],
         "font-src": [
             "'self'",
@@ -518,10 +518,10 @@
         ],
         "media-src": [
             "'self'",
-            "https://marketplace.rafflex.io.test"
+            "https://static.rafflex.io"
         ],
         "connect-src": [
-            "https://marketplace.rafflex.io.test/media/models/",
+            "https://marketplace.rafflex.io/media/models/",
             "blob:"
         ],
         "frame-ancestors": [

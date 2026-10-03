@@ -1,5 +1,5 @@
 {
-    "version": "214df3e2ae5c",
+    "version": "633cf4a29b1a",
     "placeholders": [
         "title",
         "path",
@@ -94,13 +94,13 @@
             "key": "cursor",
             "label": "Cursor",
             "kind": "link",
-            "connect": "cursor://anysphere.cursor-deeplink/mcp/install?name=rafflex&config=eyJ1cmwiOiJodHRwczovL21hcmtldHBsYWNlLnJhZmZsZXguaW8udGVzdC9tY3AifQ=="
+            "connect": "cursor://anysphere.cursor-deeplink/mcp/install?name=rafflex&config=eyJ1cmwiOiJodHRwczovL21hcmtldHBsYWNlLnJhZmZsZXguaW8vbWNwIn0="
         },
         {
             "key": "vscode",
             "label": "VS Code",
             "kind": "link",
-            "connect": "vscode:mcp/install?%7B%22name%22%3A%22rafflex%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmarketplace.rafflex.io.test%2Fmcp%22%7D"
+            "connect": "vscode:mcp/install?%7B%22name%22%3A%22rafflex%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmarketplace.rafflex.io%2Fmcp%22%7D"
         }
     ],
     "links": {

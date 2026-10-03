@@ -201,7 +201,7 @@ export async function loadDocuments({ workspaceDirectory, baseUrl, names = works
         const missing = names.filter((name) => cached(name) === null);
 
         if (missing.length > 0) {
-            throw new RulesUnavailableError(`Could not reach ${baseUrl} (${describeError(error)}) and there is no cached copy of ${missing.map((name) => `${name}.json`).join(', ')}. Connect to the internet and run again. Behind a proxy or with a local certificate authority, set NODE_EXTRA_CA_CERTS.`);
+            throw new RulesUnavailableError(`Could not reach ${baseUrl} (${describeError(error)}) and there is no cached copy of ${missing.map((name) => `${name}.json`).join(', ')}. Connect to the internet and run again. Behind a corporate proxy, set NODE_EXTRA_CA_CERTS to its certificate authority.`);
         }
 
         for (const name of names) {

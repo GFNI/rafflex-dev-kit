@@ -1,7 +1,7 @@
 {
     "contract": 1,
-    "version": "72ab368548a6",
-    "generated_at": "2026-10-03T10:34:13+00:00",
+    "version": "271f1c74145a",
+    "generated_at": "2026-10-03T13:03:46+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
@@ -11,12 +11,12 @@
         "prompts": "__BASE_URL__/dev-kit/prompts.json"
     },
     "versions": {
-        "rules": "bc13b4388267",
+        "rules": "25eb8113e2d6",
         "contexts": "f53ed4ad5d7e",
-        "skeletons": "fbffa839ba57",
-        "libraries": "c052391c893d",
+        "skeletons": "410003470641",
+        "libraries": "493322f3af02",
         "fixtures": "744e2c3c4f86",
-        "prompts": "214df3e2ae5c"
+        "prompts": "633cf4a29b1a"
     },
     "asset_types": [
         {
