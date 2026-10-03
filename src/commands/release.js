@@ -219,11 +219,11 @@ export async function runReleaseCommand(context) {
             const draft = fresh.payload.draft;
             const has = draft === null || draft === undefined
                 ? 'no draft'
-                : `the draft ${draft.version ?? ''} ${draft.submitted === true ? 'in review' : 'not submitted'}`.replace(/\s+/g, ' ');
+                : (draft.submitted === true ? `${draft.version} in review` : `${draft.version} as a draft not yet submitted`);
 
             return failWithCode(context, {
                 code: 'not_submitted',
-                message: `The marketplace has ${has}, not ${product.version} in review, so nothing changed (no changelog edit, commit, or tag). When the creator says go, call submit_for_review for ${slug}, then run npx @rafflex/dev release ${slug} "<sync_url>" with a new link.`,
+                message: `The marketplace has ${has}, so ${product.version} of ${slug} is not in review and nothing changed (no changelog edit, commit, or tag). When the creator says go, call submit_for_review for ${slug}, then run npx @rafflex/dev release ${slug} "<sync_url>" with a new link.`,
             }, 1);
         }
     }
