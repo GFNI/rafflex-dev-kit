@@ -1,5 +1,5 @@
 {
-    "version": "633cf4a29b1a",
+    "version": "ed9d2b7ecab7",
     "placeholders": [
         "title",
         "path",
@@ -49,7 +49,7 @@
         "get_it_live_first": {
             "title": "Get it live",
             "description": "Your AI checks it, adds it to the marketplace, and sends it for review.",
-            "text": "Run `npx @rafflex/dev verify {path}` and fix anything that blocks. Then push {title} to the marketplace as a new product, and submit {version} for review with the notes in CHANGELOG.md."
+            "text": "Run `npx @rafflex/dev verify {path}` and fix anything that blocks. Review needs a description and a category, and a new product has neither: write them in listing.md from what {title} does and show me. Then push {title} to the marketplace as a new product, and submit {version} for review with the notes in CHANGELOG.md."
         },
         "get_it_live": {
             "title": "Get it live",
