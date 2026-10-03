@@ -112,7 +112,7 @@ describe('version control', () => {
         const { output } = await runJson(['status', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
 
         assert.equal(output.git.branch, 'experiment');
-        assert.deepEqual(output.products[0].warnings, ['The last sync was recorded on the main branch, but the workspace is on experiment. Switch back before pushing, or read the product again with get_product and run synced.']);
+        assert.deepEqual(output.products[0].warnings, ['The last sync was recorded on the main branch, but the workspace is on experiment. Switch back before pushing, or record the product again with request_sync and synced.']);
         assert.match((await run(['status'], { cwd: root, baseUrl: marketplace.baseUrl })).stdout, /warning: The last sync was recorded on the main branch/);
     });
 

@@ -100,14 +100,20 @@
             "json": true
         },
         {
+            "name": "push",
+            "usage": "npx @rafflex/dev push <product> <sync_url>",
+            "summary": "Verifies, then pushes only what changed through a sync link from request_sync (creating the product the first time), uploads the files, and records the result.",
+            "json": true
+        },
+        {
             "name": "synced",
-            "usage": "npx @rafflex/dev synced <product>",
-            "summary": "Records a get_product result read from standard input as the product's last known remote state, and commits the product folder.",
+            "usage": "npx @rafflex/dev synced <product> [<sync_url>]",
+            "summary": "Records the product's marketplace state and feedback from a sync link, or a get_product result read from standard input, and commits the product folder.",
             "json": true
         },
         {
             "name": "release",
-            "usage": "npx @rafflex/dev release <product>",
+            "usage": "npx @rafflex/dev release <product> [<sync_url>]",
             "summary": "Closes the Unreleased changelog section after submit_for_review succeeds, and tags the version.",
             "json": true
         },

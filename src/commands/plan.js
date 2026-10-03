@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isBlocking } from '../checker.js';
-import { lockedAssetRefusals, planListingImageLines, planListingImagesFor } from '../push-plan.js';
+import { lockedAssetRefusals, planListingImageLines, planListingImagesFor, pushStepLines, toolRouteHeading } from '../push-plan.js';
 import { suggestedVersionFor, versionSuggestionLines } from '../options/version-suggestion.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { submissionLines, submissionStatus } from '../submission.js';
@@ -110,8 +110,8 @@ function planLines(plan, product) {
 
     if (plan.stale_remote) {
         lines.push(remote === null
-            ? (plan.slug === null ? '  Not on the marketplace yet.' : '  Never synced: read it with get_product and pipe the result to synced before pushing.')
-            : '  The remote snapshot is over a day old: read it with get_product and pipe the result to synced before pushing.');
+            ? (plan.slug === null ? '  Not on the marketplace yet.' : '  Never synced: push reads the marketplace first. Without a shell, read it with get_product and pipe the result to synced before pushing.')
+            : '  The remote snapshot is over a day old: push reads the marketplace first. Without a shell, read it with get_product and pipe the result to synced before pushing.');
     }
 
     if (remote?.draft?.submitted === true) {
@@ -153,7 +153,7 @@ function planLines(plan, product) {
 
     steps.push(...listingImageLines.steps);
     steps.push(`get_product, then pipe it to npx @rafflex/dev synced ${plan.product}`);
-    lines.push(...steps.map((step, index) => `  ${index + 1}. ${step}`), ...removedAssetLines(plan.removed_assets), ...listingImageLines.notes, ...submissionLines(plan.submission));
+    lines.push(...pushStepLines(plan, product), toolRouteHeading, ...steps.map((step, index) => `  ${index + 1}. ${step}`), ...removedAssetLines(plan.removed_assets), ...listingImageLines.notes, ...submissionLines(plan.submission));
 
     return lines;
 }
@@ -227,8 +227,9 @@ function verifyPlanLines(verify, name) {
 
 /**
  * `plan <product>`: what to push, as data, compared with the remote
- * snapshot `synced` last recorded. The AI carries it out through the
- * marketplace tools, then reads the product again and runs `synced`.
+ * snapshot `synced` last recorded. With a shell the AI asks for a sync
+ * link with request_sync and runs `push`, which sends exactly this; the
+ * prose also lists the tool by tool route for AI apps without a shell.
  *
  * JSON: `{product, slug, nothing_to_push, stale_remote, template: {changed},
  * options: {changed, option_overrides?}, listing: {changed, fields?},
@@ -286,7 +287,9 @@ export async function runPlanCommand(context) {
     if (verify.ready) {
         lines.splice(1, 0, ...verifyPlanLines(verify, product.slug ?? product.path));
     } else {
-        lines.splice(1, lines.length - 1, ...lines.slice(1).filter((line) => !/^ {2}\d+\. /.test(line)), ...verifyPlanLines(verify, product.slug ?? product.path));
+        const pushLines = new Set([...pushStepLines(built.plan, product), toolRouteHeading]);
+
+        lines.splice(1, lines.length - 1, ...lines.slice(1).filter((line) => !/^ {2}\d+\. /.test(line) && !pushLines.has(line)), ...verifyPlanLines(verify, product.slug ?? product.path));
     }
 
     stdout.write(`${lines.join('\n')}\n`);

@@ -78,6 +78,7 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .row { display: flex; align-items: center; gap: 8px; }
 .row.wrap { flex-wrap: wrap; }
 .row.spread { justify-content: space-between; }
+.row.tight { gap: 4px; }
 .muted { color: var(--muted); font-size: 13px; }
 .small { font-size: 13px; }
 .error { color: var(--error); }
@@ -203,3 +204,5 @@ input[type="color"] { width: 48px; height: 32px; padding: 2px; border: 1px solid
 
 /* Get it live: what review still needs (PRD 45) */
 .checklist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.card.review { border-color: var(--error-border); }
+.review-notes { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
