@@ -104,6 +104,8 @@ export async function startFakeMarketplace() {
         getStatus: /** @type {number|null} */ (null),
         /** @type {Record<string, any>|null} Feedback for every product. */
         feedback: /** @type {Record<string, any>|null} */ (null),
+        /** @type {((product: Record<string, any>) => any)|null} The template check a push answers with, made before its files arrive. */
+        check: /** @type {((product: Record<string, any>) => any)|null} */ (null),
     };
     let baseUrl = '';
     /** Every tag the marketplace knows, by key, with the spelling it was first created with (tags are shared by every product). */
@@ -291,7 +293,7 @@ export async function startFakeMarketplace() {
             };
         });
 
-        send(response, 200, { sync: 1, product: clone(product), feedback: feedbackFor(product), check: product.draft === null ? null : { passed: true, issues: [], suggested_version: null }, uploads });
+        send(response, 200, { sync: 1, product: clone(product), feedback: feedbackFor(product), check: product.draft === null ? null : (behaviour.check?.(product) ?? { passed: true, issues: [], suggested_version: null }), uploads });
     };
 
     /**

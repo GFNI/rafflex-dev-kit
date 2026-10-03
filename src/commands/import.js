@@ -112,7 +112,9 @@ function downloadFailure(error, timeoutMs) {
     const name = /** @type {any} */ (error)?.name;
 
     if (name === 'TimeoutError' || name === 'AbortError') {
-        return `it took longer than ${Math.round(timeoutMs / 1000)} seconds, so the import stopped and nothing was written. Check the connection and run import again (call export_product for a fresh link if this one is over 10 minutes old)`;
+        const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+
+        return `it took longer than ${seconds} ${seconds === 1 ? 'second' : 'seconds'}, so the import stopped and nothing was written. Check the connection and run import again (call export_product for a fresh link if this one is over 10 minutes old)`;
     }
 
     return messageOf(/** @type {any} */ (error)?.cause ?? error);
