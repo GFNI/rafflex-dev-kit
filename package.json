@@ -29,9 +29,16 @@
   "homepage": "https://marketplace.rafflex.io/docs/dev-kit.md",
   "dependencies": {
     "alpinejs": "^3.17.4",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "html-validate": "11.16.1",
+    "prettier": "3.9.9",
     "twig": "^2.0.0"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
   }
 }

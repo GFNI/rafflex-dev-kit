@@ -22,7 +22,7 @@
         "version": "1.0.0",
         "channel": "stable",
         "published_at": "2026-09-10T10:00:00+00:00",
-        "template_sha256": "621b86ed3e1601eb764524e21256b649bd33c80e62a33571f74464e76bc0308a",
+        "template_sha256": "78115c50c5c760ac8170185ad19cb83d463186450f840420e1493518fbfcac3b",
         "option_overrides": []
       }
     ],
@@ -55,7 +55,7 @@
   },
   "template_source": "live",
   "files": {
-    "template.twig": "<ul class=\"wall\">{% for winner in winners %}<li>{{ winner.name }}</li>{% endfor %}</ul>\n",
+    "template.twig": "<ul class=\"wall\">\n    {% for winner in winners %}\n    <li>{{ winner.name }}</li>\n    {% endfor %}\n</ul>\n",
     "options.json": "{}\n",
     "listing.md": "---\ncategory_ids: []\ntag_names: []\nvideo_url: \"\"\n---\n\n## Description\n\nShows recent winners.\n\n## Documentation\n\n\n\n## Install notes\n\nPlace it under the competition.\n",
     "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n\n\n## 1.0.0 (2026-09-10)\n\nFirst release.\n"

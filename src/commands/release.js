@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { gitState, runGit } from '../git.js';
+import { commitProduct } from '../git.js';
 import { changelogFilename, loadWorkspace, selectProduct } from '../workspace.js';
 import { fail, messageOf, writeJson } from './output.js';
 
@@ -137,61 +137,6 @@ export function localDate(now = new Date()) {
 }
 
 /**
- * Commit the product folder and tag the release. Only the product's own
- * files are committed, so unrelated work elsewhere in the workspace stays
- * out of the release commit. An existing tag is never moved.
- *
- * @param {string} root
- * @param {string} directory
- * @param {string} message
- * @param {string|null} tag
- * @returns {{repository: boolean, committed: boolean, commit: string|null, tag: string|null, tag_created: boolean, tag_existed: boolean, error: string|null}}
- */
-function commitAndTag(root, directory, message, tag) {
-    const result = { repository: false, committed: false, commit: /** @type {string|null} */ (null), tag, tag_created: false, tag_existed: false, error: /** @type {string|null} */ (null) };
-
-    if (!gitState(root).repository) {
-        return result;
-    }
-
-    result.repository = true;
-
-    const added = runGit(root, ['add', '-A', '--', directory]);
-    const committed = added.ok ? runGit(root, ['commit', '-q', '-m', message, '--', directory]) : added;
-
-    if (!committed.ok) {
-        result.error = `git commit failed: ${committed.stderr}`;
-
-        return result;
-    }
-
-    result.committed = true;
-    result.commit = runGit(root, ['rev-parse', 'HEAD']).stdout.trim() || null;
-
-    if (tag === null) {
-        return result;
-    }
-
-    if (runGit(root, ['rev-parse', '-q', '--verify', `refs/tags/${tag}`]).ok) {
-        result.tag_existed = true;
-
-        return result;
-    }
-
-    const tagged = runGit(root, ['tag', tag]);
-
-    if (!tagged.ok) {
-        result.error = `git tag failed: ${tagged.stderr}`;
-
-        return result;
-    }
-
-    result.tag_created = true;
-
-    return result;
-}
-
-/**
  * `release <product>`: run after submit_for_review succeeds. Closes the
  * Unreleased changelog section under the version being worked on, and
  * with git commits the product folder as "Release <slug> <version>" and
@@ -234,7 +179,7 @@ export async function runReleaseCommand(context) {
 
     const name = product.slug ?? product.folder;
     const tag = product.slug === null ? null : `${product.slug}@${product.version}`;
-    const git = commitAndTag(workspace.root, product.directory, `Release ${name} ${product.version}`, tag);
+    const git = commitProduct(workspace.root, product.directory, `Release ${name} ${product.version}`, tag);
     /** @type {string[]} */
     const notes = [];
 

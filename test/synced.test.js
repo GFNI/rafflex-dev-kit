@@ -127,7 +127,7 @@ describe('mapping get_product to remote', () => {
 
     test('without a draft the template and options compare with the live baseline', () => {
         const remote = remoteFromProduct(wall);
-        const template = '<ul class="wall">{% for winner in winners %}<li>{{ winner.name }}</li>{% endfor %}</ul>\n';
+        const template = '<ul class="wall">\n    {% for winner in winners %}\n    <li>{{ winner.name }}</li>\n    {% endfor %}\n</ul>\n';
         const local = /** @type {any} */ ({ template: { text: template, sha256: templateHash(template) }, options: { value: {}, sha256: optionOverridesHash({}) }, listing: { fields: {}, sha256: remote.listing_sha256 }, assets: [], refusals: [] });
 
         assert.deepEqual([compareWithRemote(local, remote).template, compareWithRemote(local, remote).options], [false, false]);

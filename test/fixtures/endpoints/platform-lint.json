@@ -1,0 +1,101 @@
+{
+    "fixtures": [
+        {
+            "name": "game-thin-with-hooks",
+            "type": "game",
+            "template": "{# A game that keeps Twig thin and has both playthrough hooks. #}\n<div\n    class=\"rfx-game\"\n    x-data='{ plays: {{ plays|json }}, revealed: [], files: {{ files|json }} }'\n    style=\"background: {{ settings.background }}; color: {{ settings['button_text_color'] }}\"\n>\n    {% if play_count == 0 %}\n        <p>Buy tickets to play.</p>\n    {% elseif plays %}\n        <button type=\"button\" data-rafflex-play @click=\"revealed.push(plays[revealed.length])\">Play</button>\n    {% else %}\n        <p>Nothing to play.</p>\n    {% endif %}\n    <img src=\"{{ files['background'] }}\" alt=\"\" />\n    <audio src=\"{{ files.win_jingle }}\"></audio>\n    <template x-for=\"play in revealed\">\n        <p :data-rafflex-result=\"play.won ? 'win' : 'lose'\" x-text=\"play.won ? 'Win' : 'No win'\"></p>\n    </template>\n    {%- if settings.show_footer -%}\n        <footer>{{ tenant.name|json }}</footer>\n    {%- endif -%}\n</div>\n",
+            "issues": []
+        },
+        {
+            "name": "game-twig-logic",
+            "type": "game",
+            "template": "<div class=\"rfx-game\" data-rafflex-play>\n    {% set first = plays|first %}\n    <p>You have {{ play_count }} plays.</p>\n    {% for play in plays %}\n        <p data-rafflex-result=\"{{ play.won ? 'win' : 'lose' }}\">{{ play.prize.name|upper }}</p>\n    {% endfor %}\n    {% if plays|length > 3 %}\n        <p>Lots of plays: {{ plays|length }}</p>\n    {% endif %}\n    <p>{{ play_count }} again, reported once.</p>\n    {{ settings.primary_color|json }}\n    {{ settings }}\n</div>\n",
+            "issues": [
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {% set first = plays|first %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 2
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {{ play_count }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 3
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {% for play in plays %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 4
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {{ play.won ? 'win' : 'lose' }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 5
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {{ play.prize.name|upper }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 5
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {% endfor %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 6
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {% if plays|length > 3 %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 7
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {{ plays|length }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 8
+                },
+                {
+                    "code": "game_twig_logic",
+                    "message": "Twig in a game only passes data in: {{ settings }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
+                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "line": 12
+                }
+            ]
+        },
+        {
+            "name": "game-no-hooks",
+            "type": "game",
+            "template": "<div x-data='{ plays: {{ plays|json }} }'>\n    <button type=\"button\">Play</button>\n    <p x-text=\"plays.length\"></p>\n</div>\n",
+            "issues": [
+                {
+                    "code": "playthrough_hooks_missing",
+                    "message": "This game has no data-rafflex-play or data-rafflex-result attribute, so it cannot be played through automatically.",
+                    "fix": "Put data-rafflex-play on the element that plays the next entry, and set data-rafflex-result to win or lose on the element that reveals each outcome."
+                }
+            ]
+        },
+        {
+            "name": "game-result-hook-only",
+            "type": "game",
+            "template": "<div x-data='{ plays: {{ plays|json }}, shown: null }'>\n    <button type=\"button\" @click=\"shown = plays[0]\">Play</button>\n    <p x-show=\"shown\" :data-rafflex-result=\"shown && shown.won ? 'win' : 'lose'\"></p>\n    <p data-rafflex-player=\"decoy\"></p>\n</div>\n",
+            "issues": [
+                {
+                    "code": "playthrough_hooks_missing",
+                    "message": "This game has no data-rafflex-play attribute, so it cannot be played through automatically.",
+                    "fix": "Put data-rafflex-play on the element that plays the next entry, and set data-rafflex-result to win or lose on the element that reveals each outcome."
+                }
+            ]
+        },
+        {
+            "name": "block-full-twig",
+            "type": "block",
+            "template": "{% set heading = options.heading|default('Ending soon') %}\n<section>\n    <h2>{{ heading|upper }}</h2>\n    {% for competition in competitions.ending_soon|slice(0, 3) %}\n        <a href=\"{{ competition.url }}\">{{ competition.title }}</a>\n    {% endfor %}\n</section>\n",
+            "issues": []
+        }
+    ]
+}

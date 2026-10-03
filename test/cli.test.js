@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { nonBlockingCodes } from '../src/checker.js';
 import { parseArguments, UsageError } from '../src/cli.js';
 import { devKitCommands, publishedCommands } from '../src/command-list.js';
 import { legacyLayoutMessage } from '../src/workspace.js';
@@ -23,7 +24,7 @@ describe('argument parsing', () => {
         assert.equal(parseArguments(['check', '--all']).all, true);
 
         for (const { name } of devKitCommands) {
-            const argv = { new: ['new', 'game', 'Title'], import: ['import', 'bundle.json'], version: ['version', 'patch'] }[name] ?? [name];
+            const argv = { new: ['new', 'game', 'Title'], import: ['import', 'bundle.json'], version: ['version', 'patch'], restore: ['restore', 'spin-to-win', 'last-push'] }[name] ?? [name];
 
             assert.equal(parseArguments([...argv, '--json']).json, true, name);
         }
@@ -34,7 +35,15 @@ describe('argument parsing', () => {
         assert.throws(() => parseArguments(['version']), /Missing arguments for version/);
         assert.throws(() => parseArguments(['status', 'a', 'b']), /Too many arguments for status/);
         assert.throws(() => parseArguments(['launch']), UsageError);
-        assert.throws(() => parseArguments(['status', '--all']), /--all only applies to check/);
+        assert.throws(() => parseArguments(['status', '--all']), /--all only applies to format, check, test, and verify/);
+        assert.equal(parseArguments(['verify', '--all']).all, true);
+        assert.equal(parseArguments(['format', '--check']).check, true);
+        assert.throws(() => parseArguments(['check', '--check']), /--check only applies to format/);
+        assert.equal(parseArguments(['test', '--install']).install, true);
+        assert.throws(() => parseArguments(['verify', '--install']), /--install only applies to test/);
+        assert.equal(parseArguments(['restore', 'spin-to-win', 'last-push', '--yes']).yes, true);
+        assert.throws(() => parseArguments(['restore', 'spin-to-win']), /Missing arguments for restore/);
+        assert.throws(() => parseArguments(['plan', '--yes']), /--yes only applies to restore/);
         assert.throws(() => parseArguments(['check', '--type', 'game']), /--type only applies to new/);
         assert.deepEqual(parseArguments(['new', '--', 'game', '--odd title']).positionals, ['game', '--odd title']);
     });
@@ -103,7 +112,7 @@ describe('rafflex-dev CLI', () => {
     });
 
     test('check --json passes a clean template with exit code 0', async () => {
-        const directory = temporaryProduct({ template: '<p>{{ play_count }} {{ plays|json }}</p>' });
+        const directory = temporaryProduct({ template: '<p data-rafflex-play data-rafflex-result>{{ plays|json }}</p>\n' });
         const result = await run(['check', '--json'], { cwd: directory, baseUrl: server.baseUrl });
         const output = JSON.parse(result.stdout);
 
@@ -132,7 +141,7 @@ describe('rafflex-dev CLI', () => {
             assert.equal(typeof issue.fix, 'string');
         }
 
-        assert.deepEqual([...new Set(output.issues.map((issue) => issue.code))], ['safety', 'sandbox']);
+        assert.deepEqual([...new Set(output.issues.filter((issue) => !nonBlockingCodes.includes(issue.code)).map((issue) => issue.code))], ['safety', 'sandbox']);
         assert.ok(output.issues.some((issue) => issue.code === 'sandbox' && issue.scenario === 'no_plays' && issue.line === 2));
         assert.ok(output.issues.some((issue) => issue.file === 'assets/mine.js'));
     });

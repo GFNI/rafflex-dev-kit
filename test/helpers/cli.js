@@ -16,7 +16,8 @@ writeFileSync(gitConfig, '[user]\n\tname = Kit Test\n\temail = kit@example.com\n
 export const isolatedGitEnv = { GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1' };
 
 /**
- * Run the kit's binary.
+ * Run the kit's binary. Browser tests are off unless a test passes
+ * RAFFLEX_NO_PLAYWRIGHT: '0'.
  *
  * @param {string[]} args
  * @param {{cwd: string, baseUrl?: string, env?: Record<string, string>, input?: string}} options
@@ -24,7 +25,7 @@ export const isolatedGitEnv = { GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTE
  */
 export function run(args, { cwd, baseUrl, env = {}, input }) {
     return new Promise((resolve) => {
-        const child = execFile(process.execPath, [bin, ...args], { cwd, env: { ...process.env, ...isolatedGitEnv, RAFFLEX_BASE_URL: baseUrl ?? 'http://127.0.0.1:9', ...env } }, (error, stdout, stderr) => {
+        const child = execFile(process.execPath, [bin, ...args], { cwd, env: { ...process.env, ...isolatedGitEnv, RAFFLEX_BASE_URL: baseUrl ?? 'http://127.0.0.1:9', RAFFLEX_NO_PLAYWRIGHT: '1', ...env } }, (error, stdout, stderr) => {
             resolve({ code: error ? Number(error.code) : 0, stdout, stderr });
         });
 

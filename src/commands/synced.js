@@ -1,6 +1,7 @@
 import { existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { readAll } from '../cli.js';
+import { commitProduct, currentBranch, gitState } from '../git.js';
 import { bumpVersion, compareVersions, isVersion } from '../semver.js';
 import { remoteFromProduct, unwrapProductPayload } from '../sync-state.js';
 import { loadWorkspace, selectProduct, writeProductJson } from '../workspace.js';
@@ -42,7 +43,12 @@ export function versionAfterSync(current, remote) {
  * time (renaming a title named folder to the slug), and adopts the
  * server's draft version. Refuses a result for a different product.
  *
- * JSON: `{product, previous_product, slug, version, previous_version, renamed, remote}`.
+ * After a push (a draft revision or version the last sync did not have,
+ * or the first sync) it commits the product folder, and only it, as
+ * "Push <slug> <version> (draft revision <n>)". The branch is recorded so
+ * status can warn when the workspace moves to another one.
+ *
+ * JSON: `{product, previous_product, slug, version, previous_version, renamed, notes, remote, git}`.
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -97,7 +103,9 @@ export async function runSyncedCommand(context) {
     /** @type {string[]} */
     const notes = [];
 
-    writeProductJson(directory, { ...product.manifest, slug: payload.slug, version, remote });
+    const branch = currentBranch(workspace.root);
+
+    writeProductJson(directory, { ...product.manifest, slug: payload.slug, version, remote: { ...remote, branch } });
 
     if (product.slug === null && product.folder !== payload.slug) {
         const typeFolder = path.split('/')[0];
@@ -117,17 +125,32 @@ export async function runSyncedCommand(context) {
         }
     }
 
+    const draft = remote.draft;
+    const message = draft === null || draft.version === null
+        ? `Push ${payload.slug} ${version}`
+        : `Push ${payload.slug} ${draft.version}${Number.isInteger(draft.revision) ? ` (draft revision ${draft.revision})` : ''}`;
+    const previousDraft = product.manifest.remote?.draft ?? null;
+    const pushed = product.manifest.remote === null
+        || (draft?.revision ?? null) !== (previousDraft?.revision ?? null)
+        || (draft?.version ?? null) !== (previousDraft?.version ?? null);
+    const git = pushed
+        ? commitProduct(workspace.root, renamed ? [product.directory, directory] : directory, message)
+        : { repository: gitState(workspace.root).repository, committed: false, commit: null, tag: null, tag_created: false, tag_existed: false, error: null };
+
+    if (git.error !== null) {
+        notes.push(git.error);
+    }
+
     if (version !== product.version) {
         notes.push(`Version ${product.version} -> ${version}${remote.draft === null ? ' (the next minor after the live version)' : ' (the draft\'s version on the marketplace)'}.`);
     }
 
     if (options.json) {
-        writeJson(stdout, { product: path, previous_product: product.path, slug: payload.slug, version, previous_version: product.version, renamed, notes, remote });
+        writeJson(stdout, { product: path, previous_product: product.path, slug: payload.slug, version, previous_version: product.version, renamed, notes, remote: { ...remote, branch }, git });
 
         return 0;
     }
 
-    const draft = remote.draft;
     const parts = [remote.status ?? 'unknown status', `live ${remote.live_version ?? 'none'}`];
 
     if (draft !== null) {
@@ -138,7 +161,7 @@ export async function runSyncedCommand(context) {
         parts.push(`review ${remote.latest_review.decision}`);
     }
 
-    stdout.write(`${path}: recorded the marketplace state (${parts.join(', ')}).${renamed ? ` Renamed from ${product.path}.` : ''}\nRun npx @rafflex/dev plan ${payload.slug} to see what is left to push.\n`);
+    stdout.write(`${path}: recorded the marketplace state (${parts.join(', ')}).${renamed ? ` Renamed from ${product.path}.` : ''}\n${git.committed ? `Committed "${message}".\n` : ''}Run npx @rafflex/dev plan ${payload.slug} to see what is left to push.\n`);
 
     for (const note of notes) {
         stderr.write(`note: ${note}\n`);
