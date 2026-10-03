@@ -289,7 +289,8 @@ describe('the app on localhost', () => {
         assert.equal(brandNew.publish.state.label, 'Not pushed yet');
         assert.equal(brandNew.publish.prompt.key, 'get_it_live_first');
         assert.equal(brandNew.publish.prompt.text, fillPrompt(prompts.get_it_live_first.text, { title: 'Brand New', path: 'games/brand-new', version: '1.0.0' }));
-        assert.ok(brandNew.publish.prompt.text.includes('submit 1.0.0 for review'));
+        assert.ok(brandNew.publish.prompt.text.includes('Submit 1.0.0 for review'));
+        assert.ok(brandNew.publish.prompt.text.includes('call `request_sync` with no slug and run `npx @rafflex/dev push games/brand-new "<sync_url>"`'));
         assert.equal(brandNew.publish.disabled, false);
         assert.equal(inReview.publish.state.label, 'In review');
         assert.equal(inReview.publish.prompt.key, 'check_review');
@@ -299,7 +300,8 @@ describe('the app on localhost', () => {
         assert.equal(live.publish.prompt.key, 'next_version');
         assert.equal(ready.publish.prompt.key, 'get_it_live');
         assert.equal(ready.publish.prompt.text, fillPrompt(prompts.get_it_live.text, { title: 'Ready One', path: 'games/ready-one', slug: 'ready-one', version: '1.1.0' }));
-        assert.ok(ready.publish.prompt.text.includes('submit 1.1.0 for review with the notes in CHANGELOG.md'));
+        assert.ok(ready.publish.prompt.text.includes('Submit 1.1.0 for review with the notes in CHANGELOG.md'));
+        assert.ok(ready.publish.prompt.text.includes('call `request_sync` for ready-one'));
     });
 
     test('the product view carries its prompts filled in, the changelog, and the preview controls', async () => {

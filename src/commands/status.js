@@ -1,4 +1,5 @@
 import { refreshAgentsMarkdown, serverAgentsMarkdown } from '../agents-md.js';
+import { feedbackLines, productFeedback } from '../feedback.js';
 import { currentBranch, gitState } from '../git.js';
 import { planListingImagesFor } from '../push-plan.js';
 import { readCachedDocuments } from '../remote.js';
@@ -75,6 +76,7 @@ export function productStatus(product, documents, branch = null) {
         problems,
         warnings: branchWarnings(remote, branch),
         submission: submissionStatus(product, documents, local),
+        feedback: productFeedback(remote),
     };
 }
 
@@ -105,7 +107,7 @@ function statusLines(status) {
     const { remote } = status;
 
     if (remote === null) {
-        lines.push(status.slug === null ? '  remote: not on the marketplace yet' : '  remote: never synced: read it with get_product and run synced before pushing');
+        lines.push(status.slug === null ? '  remote: not on the marketplace yet' : '  remote: never synced: record it with request_sync and synced, or push it');
     } else {
         const parts = [remote.status ?? 'unknown status', `live ${remote.live_version ?? 'none'}${remote.live_channel ? ` (${remote.live_channel})` : ''}`];
 
@@ -123,8 +125,10 @@ function statusLines(status) {
         lines.push(`  remote: ${parts.join(', ')}`);
 
         if (status.stale_remote) {
-            lines.push('  the remote snapshot is over a day old: read it again with get_product and run synced before pushing');
+            lines.push('  the remote snapshot is over a day old: push reads the marketplace first, or refresh it with request_sync and synced');
         }
+
+        lines.push(...feedbackLines(status.feedback));
     }
 
     const { changes } = status;
@@ -172,7 +176,10 @@ function statusLines(status) {
  * network request status makes, and it falls back to the cache.
  *
  * JSON: `{workspace, git: {installed, repository, branch}, agents_md, products: [...]}`;
- * each product carries `warnings` (for example a sync recorded on another branch).
+ * each product carries `warnings` (for example a sync recorded on another
+ * branch) and `feedback`: the latest review with its notes and failing
+ * checks, the open bug report and unanswered question counts, and the
+ * headline statistics, as the last sync recorded them (null before any).
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}

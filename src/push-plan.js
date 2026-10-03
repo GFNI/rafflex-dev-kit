@@ -112,3 +112,23 @@ export function planListingImageLines(plan) {
 
     return { steps, notes };
 }
+
+/** The line that introduces the tool by tool route in the plan's prose. */
+export const toolRouteHeading = '  Without a shell, call these marketplace tools in order instead:';
+
+/**
+ * The plan's push steps for an AI with a shell: ask for a sync link with
+ * request_sync, then run push, which sends exactly what the plan lists.
+ *
+ * @param {{slug: string|null, product: string}} plan
+ * @param {{type: string}} product
+ * @returns {string[]}
+ */
+export function pushStepLines(plan, product) {
+    const request = plan.slug === null ? `request_sync with no slug (a new ${product.type})` : `request_sync with slug ${plan.slug}`;
+
+    return [
+        `  To push: call ${request}, then run npx @rafflex/dev push ${plan.slug ?? plan.product} "<sync_url>".`,
+        '  push sends only what is listed here, uploads the files, and records the result.',
+    ];
+}

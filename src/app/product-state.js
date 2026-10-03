@@ -1,3 +1,4 @@
+import { counted, reviewToAct, statisticsLine } from '../feedback.js';
 import { fillPrompt, issuesText, issueText } from './prompts.js';
 
 /**
@@ -12,9 +13,9 @@ import { fillPrompt, issuesText, issueText } from './prompts.js';
  */
 
 /**
- * The product's state, most important first: "Not pushed yet", "Changes
- * requested", "In review", "Changes not pushed", "Live 1.2.0", or
- * "Pushed, not live".
+ * The product's state, most important first: "Not pushed yet", "Removed"
+ * (the marketplace's staff took it down), "Changes requested", "In
+ * review", "Changes not pushed", "Live 1.2.0", or "Pushed, not live".
  *
  * @param {ProductSummary} summary
  * @returns {ProductState}
@@ -24,6 +25,10 @@ export function productState(summary) {
 
     if (!remote.pushed) {
         return { key: 'not_pushed', label: 'Not pushed yet', tone: 'muted' };
+    }
+
+    if (remote.status === 'removed') {
+        return { key: 'removed', label: 'Removed', tone: 'error' };
     }
 
     if (remote.review !== null && ['changes_requested', 'rejected'].includes(remote.review.decision)) {
@@ -149,6 +154,8 @@ export function publishStep(summary, result, prompts) {
         switch (state.key) {
             case 'not_pushed':
                 return ['get_it_live_first', `Ask your AI to test it, push it, and send ${summary.version} for review.`];
+            case 'removed':
+                return ['', 'Our team removed it from the marketplace. Email support@rafflex.io to find out why and what to change.'];
             case 'changes_requested':
                 return ['fix_review', 'The reviewer asked for changes. Ask your AI to make them and send it back.'];
             case 'in_review':
@@ -165,4 +172,47 @@ export function publishStep(summary, result, prompts) {
     })();
 
     return { state, next, disabled: false, reason: null, prompt: promptFor(prompts, key, values) };
+}
+
+/**
+ * What the app shows of the marketplace's feedback (PRD 45):
+ *
+ * - `review`: the reviewer's decision and notes when the latest review
+ *   sent the version back, with the `fix_review` prompt (null when the
+ *   marketplace's prompts do not have it, and the panel hides the action);
+ * - `feedback_badges`: open bug reports and unanswered questions, each
+ *   with the prompt that has the AI read them through the marketplace's
+ *   tools (buyer text never reaches the workspace);
+ * - `statistics`: one quiet line of headline numbers for a live product.
+ *
+ * Review notes are staff written text; the page renders them as text.
+ *
+ * @param {ProductSummary & {feedback?: import('../feedback.js').Feedback|null}} summary
+ * @param {import('./results.js').TestResult|null} result
+ * @param {import('./prompts.js').PromptsDocument|null} prompts
+ */
+export function feedbackView(summary, result, prompts) {
+    const feedback = summary.feedback ?? null;
+    const values = promptValues(summary, result);
+    const review = summary.remote.status === 'removed' ? null : reviewToAct(feedback, summary.remote.in_review);
+    const badges = [
+        { key: 'bug_reports', count: feedback?.open_bug_reports ?? 0, singular: 'open bug report', plural: 'open bug reports' },
+        { key: 'questions', count: feedback?.unanswered_questions ?? 0, singular: 'unanswered question', plural: 'unanswered questions' },
+    ]
+        .filter((badge) => badge.count > 0)
+        .map((badge) => ({ key: badge.key, count: badge.count, label: counted(badge.count, badge.singular, badge.plural), prompt: promptFor(prompts, badge.key, values) }));
+
+    return {
+        review: review === null ? null : {
+            decision: review.decision,
+            label: review.decision === 'rejected' ? 'Rejected' : 'Changes requested',
+            version: review.version,
+            notes: review.notes,
+            decided_at: review.decided_at,
+            failing_checks: review.failing_checks,
+            prompt: promptFor(prompts, 'fix_review', values),
+        },
+        feedback_badges: badges,
+        statistics: summary.remote.live_version === null ? null : statisticsLine(feedback?.statistics ?? null),
+    };
 }

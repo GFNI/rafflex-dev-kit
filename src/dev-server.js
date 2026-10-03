@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { createProduct, isInside, openFolder, testRunner } from './app/actions.js';
 import { detectClients, detectOpeners } from './app/clients.js';
-import { productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
+import { feedbackView, productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
 import { promptSource } from './app/prompts.js';
 import { imageExtensions, readLastResult, resultsDirectoryName } from './app/results.js';
 import { scanAssets } from './assets.js';
@@ -373,6 +373,7 @@ export function productSummary(product, documents) {
         local: remote === null ? null : { changed: /** @type {string[]} */ (changed) },
         problems: status.problems,
         submission: status.submission,
+        feedback: status.feedback,
     };
 }
 
@@ -678,6 +679,7 @@ export async function startDevServer({
             state: productState(summary),
             test: { ...testSummary(result), at: result?.at ?? null, running: runner.isRunning(product.path) },
             hand_to_ai: productPrompts(summary, result, promptsDocument).hand_to_ai?.text ?? null,
+            ...feedbackView(summary, result, promptsDocument),
         };
     };
 
@@ -708,6 +710,7 @@ export async function startDevServer({
             result,
             publish: publishStep(summary, result, document),
             prompts: productPrompts(summary, result, document),
+            ...feedbackView(summary, result, document),
             changelog,
             scenarios: documents.contexts.scenarios ?? [],
             play_count: documents.contexts.play_count ?? { min: 1, max: 25, default: 5 },

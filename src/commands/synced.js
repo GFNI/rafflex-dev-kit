@@ -1,157 +1,146 @@
-import { existsSync, renameSync } from 'node:fs';
-import { join } from 'node:path';
 import { readAll } from '../cli.js';
-import { commitProduct, currentBranch, gitState } from '../git.js';
-import { bumpVersion, compareVersions, isVersion } from '../semver.js';
-import { remoteFromProduct, unwrapProductPayload } from '../sync-state.js';
-import { loadWorkspace, selectProduct, writeProductJson } from '../workspace.js';
+import { reviewToAct, productFeedback } from '../feedback.js';
+import { payloadMismatch, recordProductState, versionAfterSync } from '../record-sync.js';
+import { callSyncLink, parseSyncLink, productAndLink, SyncLinkError } from '../sync-link.js';
+import { unwrapProductPayload } from '../sync-state.js';
+import { loadWorkspace, selectProduct } from '../workspace.js';
 import { fail, messageOf, writeJson } from './output.js';
 
-const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export { versionAfterSync };
 
 /**
- * The version to work on after reading the server: the draft's version
- * when there is a draft, otherwise the next minor after the latest
- * released version when the local one is not already above it.
+ * Read the product's state from a sync link: the product in the
+ * get_product shape and its feedback.
  *
- * @param {string} current
- * @param {import('../workspace.js').ProductRemote} remote
- * @returns {string}
+ * @param {import('../workspace.js').Workspace} workspace
+ * @param {string} raw
+ * @returns {Promise<{payload: Record<string, any>|null, feedback: Record<string, any>|null, link: import('../sync-link.js').SyncLink}>}
  */
-export function versionAfterSync(current, remote) {
-    if (typeof remote.draft?.version === 'string' && remote.draft.version !== '') {
-        return remote.draft.version;
-    }
+export async function readLinkState(workspace, raw) {
+    const link = parseSyncLink(raw, workspace.baseUrl);
+    const document = await callSyncLink(link, 'GET');
 
-    const live = remote.live_version;
-
-    if (typeof live !== 'string' || !isVersion(live)) {
-        return current;
-    }
-
-    if (isVersion(current) && compareVersions(current, live) > 0) {
-        return current;
-    }
-
-    return bumpVersion(live, 'minor');
+    return { payload: document.product, feedback: document.feedback, link };
 }
 
 /**
- * `synced <product>`: read a get_product result on standard input (the
- * structured content, an MCP tool result, or an export bundle) and record
- * it as product.json's `remote` block. Also records the slug the first
- * time (renaming a title named folder to the slug), and adopts the
- * server's draft version. Refuses a result for a different product.
+ * Report a sync link error: its code and message, and any issues.
  *
- * After a push (a draft revision or version the last sync did not have,
- * or the first sync) it commits the product folder, and only it, as
- * "Push <slug> <version> (draft revision <n>)". The branch is recorded so
- * status can warn when the workspace moves to another one.
+ * @param {import('../cli.js').CommandContext} context
+ * @param {SyncLinkError} error
+ */
+export function failWithLinkError(context, error) {
+    return fail(context, error.message, error.exitCode, { code: error.code, ...(error.issues === undefined ? {} : { issues: error.issues }) });
+}
+
+/**
+ * `synced <product> [<sync_url>]`: record the product's marketplace state
+ * as product.json's `remote` block. With a sync link (from request_sync)
+ * it reads the state and the feedback from the link; without one it reads
+ * a get_product result on standard input (the structured content, an MCP
+ * tool result, or an export bundle). Also records the slug the first time
+ * (renaming a title named folder to the slug), and adopts the server's
+ * draft version. Refuses a result for a different product.
  *
- * JSON: `{product, previous_product, slug, version, previous_version, renamed, notes, remote, git}`.
+ * When the draft revision or version changed (or on the first sync) it
+ * commits the product folder, and only it: "Push <slug> <version> (draft
+ * revision <n>)" when the folder holds what the marketplace now has, and
+ * "Sync <slug> (draft revision <n>)" when the draft changed elsewhere,
+ * so `restore last-push` never returns to a state that was not pushed.
+ * The branch is recorded so status can warn when the workspace moves to
+ * another one.
+ *
+ * JSON: `{product, previous_product, slug, version, previous_version, renamed, notes, remote, feedback, git}`.
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
  */
 export async function runSyncedCommand(context) {
     const { cwd, stdout, stderr, stdin, options } = context;
+    const { name, link } = productAndLink(options.positionals);
     let workspace;
     let product;
 
     try {
         workspace = loadWorkspace(cwd);
-        product = selectProduct(workspace, options.positionals[0], cwd);
+        product = selectProduct(workspace, name, cwd);
     } catch (error) {
         return fail(context, messageOf(error), 2);
     }
 
-    const input = await readAll(stdin);
+    /** @type {Record<string, any>|null} */
+    let payload;
     /** @type {unknown} */
-    let parsed;
+    let feedback;
+    let source = 'That get_product result';
 
-    try {
-        parsed = JSON.parse(input);
-    } catch {
-        return fail(context, input.trim() === ''
-            ? `Pipe the get_product result for ${product.title} to this command, for example: echo '<the result JSON>' | npx @rafflex/dev synced ${product.slug ?? product.path}`
-            : 'Standard input is not JSON. Pipe the get_product result exactly as the tool returned it.', 2);
-    }
+    if (link !== undefined) {
+        try {
+            const state = await readLinkState(workspace, link);
 
-    const payload = unwrapProductPayload(parsed);
-
-    if (payload === null) {
-        return fail(context, 'Standard input is not a get_product result (it has no slug and type). Pipe the tool\'s structured result.', 2);
-    }
-
-    if (!slugPattern.test(payload.slug)) {
-        return fail(context, `The get_product result has an invalid slug "${payload.slug}".`, 2);
-    }
-
-    if (payload.type !== product.type) {
-        return fail(context, `That get_product result is for a ${payload.type} (${payload.slug}), but ${product.path} is a ${product.type}. Read the right product.`, 1);
-    }
-
-    if (product.slug !== null && product.slug !== payload.slug) {
-        return fail(context, `That get_product result is for ${payload.slug}, but ${product.path} is ${product.slug}. Read the right product, or name it: npx @rafflex/dev synced ${payload.slug}`, 1);
-    }
-
-    const remote = remoteFromProduct(payload);
-    const version = versionAfterSync(product.version, remote);
-    let directory = product.directory;
-    let path = product.path;
-    let renamed = false;
-    /** @type {string[]} */
-    const notes = [];
-
-    const branch = currentBranch(workspace.root);
-
-    writeProductJson(directory, { ...product.manifest, slug: payload.slug, version, remote: { ...remote, branch } });
-
-    if (product.slug === null && product.folder !== payload.slug) {
-        const typeFolder = path.split('/')[0];
-        const target = join(workspace.root, typeFolder, payload.slug);
-
-        if (existsSync(target)) {
-            notes.push(`${typeFolder}/${payload.slug} already exists, so ${product.path} keeps its folder name. Move or remove the other folder and rename this one to ${payload.slug}.`);
-        } else {
-            try {
-                renameSync(directory, target);
-                directory = target;
-                path = `${typeFolder}/${payload.slug}`;
-                renamed = true;
-            } catch (error) {
-                notes.push(`Could not rename ${product.path} to ${typeFolder}/${payload.slug}: ${messageOf(error)}`);
+            payload = state.payload;
+            feedback = state.feedback;
+            source = 'That link';
+        } catch (error) {
+            if (error instanceof SyncLinkError) {
+                return failWithLinkError(context, error);
             }
+
+            throw error;
+        }
+
+        if (payload === null) {
+            return fail(context, `That link is for a product not on the marketplace yet. Push ${product.path} with npx @rafflex/dev push ${product.slug ?? product.path} "<sync_url>" to create it.`, 1, { code: 'not_created' });
+        }
+    } else {
+        const input = await readAll(stdin);
+        /** @type {unknown} */
+        let parsed;
+
+        try {
+            parsed = JSON.parse(input);
+        } catch {
+            return fail(context, input.trim() === ''
+                ? `Give this command a sync link from request_sync: npx @rafflex/dev synced ${product.slug ?? product.path} "<sync_url>". Pipe the get_product result for ${product.title} to it instead only when your AI app has no shell.`
+                : 'Standard input is not JSON. Pipe the get_product result exactly as the tool returned it.', 2);
+        }
+
+        payload = unwrapProductPayload(parsed);
+
+        if (payload === null) {
+            return fail(context, 'Standard input is not a get_product result (it has no slug and type). Pipe the tool\'s structured result.', 2);
         }
     }
 
-    const draft = remote.draft;
-    const message = draft === null || draft.version === null
-        ? `Push ${payload.slug} ${version}`
-        : `Push ${payload.slug} ${draft.version}${Number.isInteger(draft.revision) ? ` (draft revision ${draft.revision})` : ''}`;
-    const previousDraft = product.manifest.remote?.draft ?? null;
-    const pushed = product.manifest.remote === null
-        || (draft?.revision ?? null) !== (previousDraft?.revision ?? null)
-        || (draft?.version ?? null) !== (previousDraft?.version ?? null);
-    const git = pushed
-        ? commitProduct(workspace.root, renamed ? [product.directory, directory] : directory, message)
-        : { repository: gitState(workspace.root).repository, committed: false, commit: null, tag: null, tag_created: false, tag_existed: false, error: null };
+    const mismatch = payloadMismatch(product, payload, source);
 
-    if (git.error !== null) {
-        notes.push(git.error);
+    if (mismatch !== null) {
+        return fail(context, mismatch.message, mismatch.exitCode);
     }
 
-    if (version !== product.version) {
-        notes.push(`Version ${product.version} -> ${version}${remote.draft === null ? ' (the next minor after the live version)' : ' (the draft\'s version on the marketplace)'}.`);
-    }
+    const recorded = recordProductState({ workspace, product, payload, feedback, kind: 'auto' });
+    const shown = productFeedback(/** @type {any} */ (recorded.remote));
 
     if (options.json) {
-        writeJson(stdout, { product: path, previous_product: product.path, slug: payload.slug, version, previous_version: product.version, renamed, notes, remote: { ...remote, branch }, git });
+        writeJson(stdout, {
+            product: recorded.path,
+            previous_product: product.path,
+            slug: recorded.slug,
+            version: recorded.version,
+            previous_version: product.version,
+            renamed: recorded.renamed,
+            notes: recorded.notes,
+            remote: recorded.remote,
+            feedback: shown,
+            git: recorded.git,
+        });
 
         return 0;
     }
 
+    const { remote } = recorded;
     const parts = [remote.status ?? 'unknown status', `live ${remote.live_version ?? 'none'}`];
+    const draft = remote.draft;
 
     if (draft !== null) {
         parts.push(`draft ${draft.version ?? '?'} r${draft.revision ?? '?'}${draft.submitted ? ' in review' : ''}`);
@@ -161,9 +150,21 @@ export async function runSyncedCommand(context) {
         parts.push(`review ${remote.latest_review.decision}`);
     }
 
-    stdout.write(`${path}: recorded the marketplace state (${parts.join(', ')}).${renamed ? ` Renamed from ${product.path}.` : ''}\n${git.committed ? `Committed "${message}".\n` : ''}Run npx @rafflex/dev plan ${payload.slug} to see what is left to push.\n`);
+    const review = reviewToAct(shown, draft?.submitted === true);
+    const lines = [`${recorded.path}: recorded the marketplace state (${parts.join(', ')}).${recorded.renamed ? ` Renamed from ${product.path}.` : ''}`];
 
-    for (const note of notes) {
+    if (recorded.message !== null) {
+        lines.push(`Committed "${recorded.message}".`);
+    }
+
+    if (review !== null) {
+        lines.push(`The reviewer ${review.decision === 'rejected' ? 'rejected' : 'asked for changes to'} ${review.version ?? recorded.version}${review.notes === null ? '.' : `: ${review.notes}`}`);
+    }
+
+    lines.push(`Run npx @rafflex/dev plan ${recorded.slug} to see what is left to push.`);
+    stdout.write(`${lines.join('\n')}\n`);
+
+    for (const note of recorded.notes) {
         stderr.write(`note: ${note}\n`);
     }
 

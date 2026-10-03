@@ -145,7 +145,14 @@
                             </td>
                             <td x-text="typeLabel(product.type)"></td>
                             <td x-text="product.version"></td>
-                            <td><span class="badge" :class="`badge-${product.state.tone}`" x-text="product.state.label"></span></td>
+                            <td>
+                                <div class="row wrap tight">
+                                    <span class="badge" :class="`badge-${product.state.tone}`" x-text="product.state.label"></span>
+                                    <template x-for="badge in product.feedback_badges ?? []" :key="badge.key">
+                                        <span class="badge badge-muted" data-feedback-badge x-text="badge.label"></span>
+                                    </template>
+                                </div>
+                            </td>
                             <td><span class="badge" :class="`badge-${product.test.tone}`" x-text="product.test.running ? 'Testing' : product.test.label"></span></td>
                             <td class="actions">
                                 <details class="menu" @click.outside="$el.open = false">
@@ -153,6 +160,9 @@
                                     <div class="menu-items">
                                         <button type="button" @click="$el.closest('details').open = false; startTest(product)" :disabled="product.test.running">Test</button>
                                         <button type="button" @click="$el.closest('details').open = false; copy(product.hand_to_ai ?? '', `hand-${product.path}`)" :disabled="!product.hand_to_ai">Hand to AI</button>
+                                        <template x-for="badge in (product.feedback_badges ?? []).filter((entry) => entry.prompt)" :key="badge.key">
+                                            <button type="button" @click="$el.closest('details').open = false; copy(badge.prompt.text, `hand-${badge.key}-${product.path}`)" x-text="badge.prompt.title"></button>
+                                        </template>
                                         <button type="button" @click="$el.closest('details').open = false; openFolder(product)">Open folder</button>
                                         <button type="button" @click="$el.closest('details').open = false; copy(product.directory, `path-${product.path}`)">Copy path</button>
                                     </div>
@@ -180,7 +190,11 @@
                             <span class="muted" x-text="`${typeLabel(product.type)} · ${product.version} · ${product.path}`"></span>
                             <span class="badge" :class="`badge-${product.state.tone}`" x-text="product.state.label"></span>
                             <span class="badge" :class="`badge-${product.test.tone}`" x-text="product.test.running ? 'Testing' : product.test.label"></span>
+                            <template x-for="badge in product.feedback_badges ?? []" :key="badge.key">
+                                <span class="badge badge-muted" data-feedback-badge x-text="badge.label"></span>
+                            </template>
                         </div>
+                        <p class="muted small" data-statistics x-show="product.statistics" x-text="product.statistics ?? ''"></p>
                     </div>
                     <div class="row">
                         <button type="button" class="button primary" @click="tab = 'test'; startTest(product)" :disabled="product.test.running" x-text="product.test.running ? 'Testing' : 'Test'"></button>
@@ -188,6 +202,9 @@
                             <summary class="button ghost icon-only" aria-label="More actions"><!-- icon:micro/ellipsis-horizontal --></summary>
                             <div class="menu-items">
                                 <button type="button" @click="$el.closest('details').open = false; copy(product.prompts.hand_to_ai?.text ?? '', 'hand')" :disabled="!product.prompts.hand_to_ai">Hand to AI</button>
+                                <template x-for="badge in (product.feedback_badges ?? []).filter((entry) => entry.prompt)" :key="badge.key">
+                                    <button type="button" @click="$el.closest('details').open = false; copy(badge.prompt.text, 'hand')" x-text="badge.prompt.title"></button>
+                                </template>
                                 <button type="button" @click="$el.closest('details').open = false; openFolder(product)">Open folder</button>
                                 <button type="button" @click="$el.closest('details').open = false; copy(product.directory, 'path')">Copy path</button>
                             </div>
@@ -197,6 +214,50 @@
                 <p class="muted small" x-show="copied === 'hand'">Prompt copied. Paste it into your AI.</p>
                 <p class="muted small" x-show="copied === 'path'">Path copied.</p>
                 <p class="error" x-show="actionError" x-text="actionError"></p>
+
+                <!-- Review -->
+                <template x-if="product.review">
+                    <section class="card stack review" data-review>
+                        <div class="row wrap">
+                            <span class="badge badge-error" x-text="product.review.label"></span>
+                            <span class="muted small" x-text="product.review.version ? `The reviewer's answer on ${product.review.version}` : 'The reviewer\'s answer'"></span>
+                        </div>
+                        <p class="review-notes" x-text="product.review.notes ?? 'The reviewer left no notes.'"></p>
+                        <template x-if="product.review.failing_checks.length > 0">
+                            <div class="stack tight">
+                                <p class="small"><strong>Still missing</strong></p>
+                                <ul class="checklist">
+                                    <template x-for="(check, index) in product.review.failing_checks" :key="index">
+                                        <li x-text="check"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+                        <template x-if="product.review.prompt">
+                            <div class="prompt">
+                                <pre x-text="product.review.prompt.text"></pre>
+                                <div class="row wrap" data-prompt-actions>
+                                    <template x-if="promptActions(product.review.prompt.text).open">
+                                        <a class="button small" :href="promptActions(product.review.prompt.text).open.href" x-text="promptActions(product.review.prompt.text).open.label"></a>
+                                    </template>
+                                    <button type="button" class="button small" :class="{ ghost: promptActions(product.review.prompt.text).open }" @click="copy(product.review.prompt.text, 'review')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'review' ? 'Copied' : 'Copy'"></span></button>
+                                    <details class="menu" x-show="promptActions(product.review.prompt.text).menu.length > 0" @click.outside="$el.open = false">
+                                        <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                                        <div class="menu-items">
+                                            <template x-for="item in promptActions(product.review.prompt.text).menu" :key="item.key">
+                                                <div class="menu-item">
+                                                    <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                                    <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${'review'}-${item.key}`)" x-text="item.label"></button></template>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </details>
+                                    <span class="muted small" x-show="String(copied ?? '').startsWith(`${'review'}-`)">Copied</span>
+                                </div>
+                            </div>
+                        </template>
+                    </section>
+                </template>
 
                 <section class="card" x-show="created && newProductPrompt">
                     <h2>Now tell your AI what to build</h2>
@@ -412,7 +473,7 @@
                                 </div>
                             </div>
                         </template>
-                        <p class="muted small">Your AI pushes and submits through your account. Nothing goes live until our team approves it.</p>
+                        <p class="muted small">Your AI asks the marketplace for a one time link and pushes with it, then submits through your account. Nothing goes live until our team approves it.</p>
                     </div>
                 </section>
 
