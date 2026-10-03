@@ -159,6 +159,25 @@ describe('options.json', () => {
         assert.match(dropped[3], /category filter/);
     });
 
+    test('a top level list warns, as the marketplace stores nothing from it, and refuses only entries that are not objects', () => {
+        const listed = overrideProblems([{ label: 'Heading' }], fields, rules);
+        const mixed = overrideProblems([{ label: 'Heading' }, 'text'], fields, rules);
+
+        assert.deepEqual(listed.map((problem) => problem.refused), [false]);
+        assert.match(listed[0].message, /^options\.json is a list, but the marketplace reads it as an object keyed by option name/);
+        assert.deepEqual(mixed.filter((problem) => problem.refused).map((problem) => problem.message), ['options.json "1" must be an object with label, help, or choices.']);
+    });
+
+    test('refuses choices over the joined length the marketplace takes, on any entry', () => {
+        const long = Array.from({ length: 40 }, () => 'x'.repeat(60));
+        const problems = overrideProblems({ heading: { choices: long }, missing: { choices: long } }, fields, rules);
+        const refused = problems.filter((problem) => problem.refused).map((problem) => problem.message);
+
+        assert.ok(refused.includes('options.json "heading" choices add up to 2439 characters (one per line); the marketplace allows 2000.'));
+        assert.ok(refused.includes('options.json "missing" choices add up to 2439 characters (one per line); the marketplace allows 2000.'));
+        assert.deepEqual(overrideProblems({ heading: { choices: Array.from({ length: 20 }, () => 'x'.repeat(60)) } }, fields, rules), []);
+    });
+
     test('override text passes the banned patterns, as the marketplace checks it', () => {
         const problems = overrideProblems({ heading: { help: 'Visit javascript:alert(1)' } }, fields, documents.rules);
 

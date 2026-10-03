@@ -61,6 +61,29 @@ describe('hashes', () => {
         assert.equal(optionOverridesHash(null), sha('{}'));
     });
 
+    test('options hash what the platform stores beside the template, so dropped entries never read as changed', () => {
+        const template = '<h1>{{ options.heading }}</h1><i style="color: {{ options.accent_colour }}"></i>{% for slide in options.slides %}{{ slide.title }}{% endfor %}{% for category in options.categories %}{{ category }}{% endfor %}\n';
+        const stored = { heading: { label: 'Title' }, accent_colour: { label: 'Accent' } };
+        const written = {
+            heading: { label: '  Title ' },
+            accent_colour: { label: 'Accent', choices: ['Red', 'Blue'] },
+            never_read: { label: 'Unused' },
+            'slides.title': { label: 'Slide title' },
+            categories: { label: 'Categories' },
+        };
+
+        assert.equal(optionOverridesHash(written, template, documents.contexts), optionOverridesHash(stored));
+        assert.notEqual(optionOverridesHash(written), optionOverridesHash(stored));
+        assert.equal(optionOverridesHash([{ label: 'A list' }], template, documents.contexts), optionOverridesHash({}));
+
+        const directory = temporaryProduct({ template, options: written });
+        const local = readLocalState(selectProduct(loadWorkspace(directory), undefined, directory), documents);
+        const remote = /** @type {any} */ ({ draft: { template_sha256: templateHash(template), option_overrides_sha256: optionOverridesHash(stored) }, listing_sha256: null, media: [] });
+
+        assert.equal(compareWithRemote(local, remote).options, false);
+        assert.deepEqual(local.options, { sha256: optionOverridesHash(stored), value: written });
+    });
+
     test('a template hashes as its exact text', () => {
         assert.equal(templateHash('<p>x</p>\n'), sha('<p>x</p>\n'));
     });
@@ -75,7 +98,7 @@ describe('hashes', () => {
 });
 
 describe('local changes against the remote snapshot', () => {
-    const template = '<p>{{ play_count }}</p>\n';
+    const template = '<p>{{ play_count }} {{ options.heading }}</p>\n';
     const directory = temporaryProduct({
         template,
         options: { heading: { label: 'Title' } },
