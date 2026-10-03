@@ -104,7 +104,7 @@ export function valuesFromQuery(query, limits = defaultLimits) {
  * @param {ValueLimits} limits
  * @returns {boolean|null}
  */
-function toggleDefault(field, limits) {
+export function toggleDefault(field, limits) {
     if (field.type !== 'toggle') {
         return null;
     }

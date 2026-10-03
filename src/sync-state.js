@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { scanAssets } from './assets.js';
 import { canonicalListing, parseListing, sortedJson } from './listing.js';
+import { normaliseOverrideText } from './options/overrides.js';
 import { readTemplate } from './workspace.js';
 
 /**
@@ -77,7 +78,7 @@ export function templateHash(template) {
  * @param {unknown} overrides
  */
 export function optionOverridesHash(overrides) {
-    return sha256(sortedJson(normaliseOptionOverrides(overrides)));
+    return sha256(sortedJson(normaliseOverrideText(normaliseOptionOverrides(overrides))));
 }
 
 /**
@@ -382,6 +383,7 @@ export function remoteFromProduct(product, now = new Date()) {
         status: typeof product.status === 'string' ? product.status : null,
         live_version: released?.version ?? null,
         live_channel: typeof released?.channel === 'string' ? released.channel : null,
+        ...(Array.isArray(released?.option_keys) ? { live_option_keys: released.option_keys.filter((/** @type {unknown} */ key) => typeof key === 'string') } : {}),
         draft: draft === null ? null : {
             version: typeof draft.version === 'string' ? draft.version : null,
             revision: Number.isInteger(draft.revision) ? draft.revision : null,

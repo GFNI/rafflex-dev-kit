@@ -1,6 +1,8 @@
 import { scanAssets } from '../assets.js';
-import { isBlocking, runChecks, verdictNote } from '../checker.js';
+import { isBlocking, runChecks, scenarioValues, verdictNote } from '../checker.js';
 import { assetUrl } from '../dev-server.js';
+import { optionIssues } from '../options/check.js';
+import { readOptionOverrides } from '../options/product-options.js';
 import { qualityIssues } from '../quality.js';
 import { loadDocuments } from '../remote.js';
 import { loadWorkspace, readTemplate, selectProducts, withManifest } from '../workspace.js';
@@ -45,6 +47,19 @@ export async function checkProduct(product, loaded, requestedPlayCount) {
     const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl);
     const playCount = requestedPlayCount ?? documents.contexts.play_count?.default ?? 5;
     const { issues, skippedPatterns } = runChecks({ template, files: scan.files, assetRefusals: scan.refusals, documents, playCount, renderedPlayCounts: 'all', type: product.type });
+    const { overrides, error: overridesError } = readOptionOverrides(product);
+
+    issues.push(...optionIssues({
+        template,
+        files: scan.files,
+        overrides,
+        overridesError,
+        assets: { images: scan.assets.filter((asset) => asset.kind === 'image').map((asset) => asset.url) },
+        remote: product.manifest.remote,
+        documents,
+        playCount,
+        scenarios: scenarioValues(documents),
+    }));
 
     issues.push(...await qualityIssues({ type: product.type, template, files: scan.files, documents }));
     const passed = !issues.some(isBlocking);

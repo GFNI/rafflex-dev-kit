@@ -1,6 +1,6 @@
 import { compilePatterns, matchPatterns } from '../banned-patterns.js';
 import { scriptViolations } from '../script-rules.js';
-import { categoriesKey, inferOptions, supportsChoices } from './infer.js';
+import { inferOptions, supportsChoices } from './infer.js';
 import { phpNumber, phpTrim } from './php-values.js';
 
 /**
@@ -24,6 +24,16 @@ const overrideParts = ['label', 'help', 'choices'];
  */
 function isObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Choices the marketplace accepts: a list (or map) of text.
+ *
+ * @param {unknown} choices
+ * @returns {choices is string[]|Record<string, string>}
+ */
+function isTextList(choices) {
+    return choices !== null && typeof choices === 'object' && Object.values(choices).every((choice) => typeof choice === 'string');
 }
 
 /**
@@ -52,14 +62,14 @@ function sameChoice(first, second) {
  * @returns {string[]}
  */
 export function normaliseChoices(choices) {
-    if (!Array.isArray(choices)) {
+    if (!isTextList(choices)) {
         return [];
     }
 
     /** @type {string[]} */
     const normalised = [];
 
-    for (const choice of choices.map((entry) => String(entry ?? '')).join('\n').split(/[\n,]/)) {
+    for (const choice of Object.values(choices).join('\n').split(/[\n,]/)) {
         const trimmed = phpTrim(choice);
 
         if (trimmed !== '' && !normalised.some((existing) => sameChoice(existing, trimmed))) {
@@ -125,6 +135,65 @@ export function normaliseOverrides(overrides, fields) {
 }
 
 /**
+ * The part of the marketplace's normalisation that does not depend on the
+ * template, for hashing both sides alike: in every entry that is an object,
+ * label and help trimmed (dropped when empty), a list (not a map) of text
+ * choices split, trimmed, and de-duplicated (dropped when empty), other parts
+ * dropped, and the entry dropped when nothing is left. Anything the
+ * marketplace would refuse instead (text of the wrong type, choices that
+ * are not a list of text) is kept as written, and `check` reports it.
+ *
+ * @param {Record<string, unknown>} overrides
+ * @returns {Record<string, unknown>}
+ */
+export function normaliseOverrideText(overrides) {
+    /** @type {Record<string, unknown>} */
+    const normalised = {};
+
+    for (const [key, override] of Object.entries(overrides)) {
+        if (!isObject(override)) {
+            normalised[key] = override;
+            continue;
+        }
+
+        /** @type {Record<string, unknown>} */
+        const entry = {};
+
+        for (const part of ['label', 'help']) {
+            const value = override[part];
+
+            if (typeof value === 'string') {
+                if (phpTrim(value) !== '') {
+                    entry[part] = phpTrim(value);
+                }
+            } else if (value !== null && value !== undefined) {
+                entry[part] = value;
+            }
+        }
+
+        const choices = override.choices;
+
+        // A map of choices is kept as written: sorted key JSON would lose
+        // the order the marketplace reads its values in.
+        if (Array.isArray(choices) && isTextList(choices)) {
+            const split = normaliseChoices(choices);
+
+            if (split.length > 0) {
+                entry.choices = split;
+            }
+        } else if (choices !== null && choices !== undefined) {
+            entry.choices = choices;
+        }
+
+        if (Object.keys(entry).length > 0) {
+            normalised[key] = entry;
+        }
+    }
+
+    return normalised;
+}
+
+/**
  * options.json normalised against a template, for hashing: what the
  * marketplace will store and send back after a push.
  *
@@ -137,7 +206,7 @@ export function storedOverrides(overrides, template, contexts) {
 }
 
 /**
- * @typedef {{key: string, message: string}} OverrideProblem
+ * @typedef {{key: string, message: string, refused: boolean}} OverrideProblem
  * @typedef {{max_label_length?: number, max_help_length?: number, max_choices?: number}} OverrideLimits
  */
 
@@ -149,11 +218,15 @@ function characters(value) {
 }
 
 /**
- * Everything in options.json the marketplace would refuse or silently
- * drop: keys the template does not read, parts it does not know, text of
- * the wrong type or over the published limits, choices on a field that
- * cannot take them or that would be split, and text the banned patterns
- * match. Limits are checked only when rules.json publishes them.
+ * Everything in options.json the marketplace would refuse (`refused`: the
+ * whole push is rolled back) or silently drop. Refused: an entry that is
+ * not an object, a label or help that is not text or is over the published
+ * limit, choices that are not a list of text, too many or too long choices
+ * on a text option, and text the banned patterns match. Dropped: keys the
+ * template does not read, the Categories filter, parts other than label,
+ * help, and choices, choices on an option that is not text, and a choice
+ * with a comma (split in two). Limits are checked only when rules.json
+ * publishes them.
  *
  * @param {unknown} overrides
  * @param {import('./infer.js').OptionField[]} fields
@@ -169,38 +242,27 @@ export function overrideProblems(overrides, fields, rules) {
     }
 
     if (!isObject(overrides)) {
-        return [{ key: '', message: 'options.json must be a JSON object keyed by option name, such as {"heading": {"label": "Heading"}}.' }];
+        return [{ key: '', message: 'options.json must be a JSON object keyed by option name, such as {"heading": {"label": "Heading"}}.', refused: true }];
     }
 
     /** @type {OverrideLimits} */
     const limits = isObject(rules?.option_overrides) ? rules.option_overrides : {};
     const types = new Map(fields.map((field) => [field.key, field.type]));
-    const problem = (/** @type {string} */ key, /** @type {string} */ message) => problems.push({ key, message });
+    const refuse = (/** @type {string} */ key, /** @type {string} */ message) => problems.push({ key, message, refused: true });
+    const drop = (/** @type {string} */ key, /** @type {string} */ message) => problems.push({ key, message, refused: false });
 
     for (const [key, override] of Object.entries(overrides)) {
         const type = types.get(key);
 
-        if (type === undefined) {
-            problem(key, `options.json sets "${key}", but the template never reads options.${key}, so the marketplace drops it. Remove it, or read options.${key} in the template.`);
+        if (override === null || typeof override !== 'object') {
+            refuse(key, `options.json "${key}" must be an object with label, help, or choices.`);
             continue;
         }
 
-        if (key === categoriesKey && type === 'categories') {
-            problem(key, 'options.json sets "categories", the platform\'s own category filter, which cannot be relabelled. Remove it.');
-            continue;
-        }
-
-        if (!isObject(override)) {
-            problem(key, `options.json "${key}" must be an object with label, help, or choices.`);
-            continue;
-        }
-
-        for (const part of Object.keys(override).filter((name) => !overrideParts.includes(name))) {
-            problem(key, `options.json "${key}" has "${part}", which the marketplace ignores. Use label, help, or choices.`);
-        }
+        const entry = /** @type {Record<string, unknown>} */ (override);
 
         for (const part of ['label', 'help']) {
-            const value = override[part];
+            const value = entry[part];
             const maximum = part === 'label' ? limits.max_label_length : limits.max_help_length;
 
             if (value === null || value === undefined) {
@@ -208,46 +270,61 @@ export function overrideProblems(overrides, fields, rules) {
             }
 
             if (typeof value !== 'string') {
-                problem(key, `options.json "${key}" ${part} must be text.`);
+                refuse(key, `options.json "${key}" ${part} must be text.`);
                 continue;
             }
 
             if (Number.isInteger(maximum) && characters(value) > /** @type {number} */ (maximum)) {
-                problem(key, `options.json "${key}" ${part} is ${characters(value)} characters; the marketplace allows ${maximum}.`);
+                refuse(key, `options.json "${key}" ${part} is ${characters(value)} characters; the marketplace allows ${maximum}.`);
             }
         }
 
-        if (override.choices === null || override.choices === undefined) {
+        const hasChoices = entry.choices !== null && entry.choices !== undefined;
+
+        if (hasChoices && !isTextList(entry.choices)) {
+            refuse(key, `options.json "${key}" choices must be a list of text, such as ["Small", "Large"].`);
+        }
+
+        if (type === undefined) {
+            drop(key, `options.json sets "${key}", but the template never reads options.${key}, so the marketplace ignores it. Remove it, or read options.${key} in the template.`);
             continue;
         }
 
-        if (!Array.isArray(override.choices) || override.choices.some((choice) => typeof choice !== 'string')) {
-            problem(key, `options.json "${key}" choices must be a list of text, such as ["Small", "Large"].`);
+        if (type === 'categories') {
+            drop(key, 'options.json sets "categories", the platform\'s own category filter, which always reads the same. Remove it.');
+            continue;
+        }
+
+        for (const part of Object.keys(entry).filter((name) => !overrideParts.includes(name))) {
+            drop(key, `options.json "${key}" has "${part}", which the marketplace ignores. Use label, help, or choices.`);
+        }
+
+        if (!hasChoices || !isTextList(entry.choices)) {
             continue;
         }
 
         if (!supportsChoices(type)) {
-            problem(key, `options.json "${key}" has choices, but options.${key} is a ${type} option and only text options take choices, so the marketplace drops them. Remove them, or rename the option so it is a text option.`);
+            drop(key, `options.json "${key}" has choices, but options.${key} is a ${type} option and only text options take choices, so the marketplace ignores them. Remove them, or rename the option so it is a text option.`);
             continue;
         }
 
-        if (override.choices.some((choice) => /[,\n]/.test(choice))) {
-            problem(key, `options.json "${key}" has a choice with a comma or a new line, which the marketplace splits into separate choices. Remove the comma.`);
+        if (Object.values(entry.choices).some((choice) => /[,\n]/.test(choice))) {
+            drop(key, `options.json "${key}" has a choice with a comma or a new line, which the marketplace splits into separate choices.`);
         }
 
-        const choices = normaliseChoices(override.choices);
+        const choices = normaliseChoices(entry.choices);
 
         if (Number.isInteger(limits.max_choices) && choices.length > /** @type {number} */ (limits.max_choices)) {
-            problem(key, `options.json "${key}" has ${choices.length} choices; the marketplace allows ${limits.max_choices}.`);
+            refuse(key, `options.json "${key}" has ${choices.length} choices; the marketplace allows ${limits.max_choices}.`);
         }
 
         if (Number.isInteger(limits.max_label_length) && choices.some((choice) => characters(choice) > /** @type {number} */ (limits.max_label_length))) {
-            problem(key, `options.json "${key}" has a choice over ${limits.max_label_length} characters, the most the marketplace allows.`);
+            refuse(key, `options.json "${key}" has a choice over ${limits.max_label_length} characters, the most the marketplace allows.`);
         }
     }
 
     for (const message of bannedTextMessages(normaliseOverrides(overrides, fields), rules)) {
-        problem('', `options.json: ${message}`);
+        refuse('', `options.json: ${message}`);
     }
 
     return problems;
