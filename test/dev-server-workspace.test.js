@@ -298,7 +298,9 @@ describe('workspace watcher', () => {
 
             try {
                 await Promise.all([alpha.ready, bravo.ready, index.ready]);
-                await pause(pollFiles ? 700 : 300);
+                // Late file system events from creating the workspace must
+                // settle first, even on a machine busy with browser tests.
+                await pause(1000);
 
                 writeFileSync(join(root, 'games', 'alpha', 'template.twig'), '<p>changed</p>');
 

@@ -1,5 +1,5 @@
 {
-    "version": "657fa715ccab",
+    "version": "bc13b4388267",
     "sandbox": {
         "tags": [
             "if",
@@ -416,7 +416,7 @@
         "option_warning": "Adjust the options declaration so site owners get the intended field.",
         "unknown_file_tag": "Upload a file with this tag or change the reference to an existing tag.",
         "too_large": "Shrink the template below the size limit, for example by moving inline images and audio into uploaded media.",
-        "game_twig_logic": "Pass the data in with |json and do this in Alpine.",
+        "game_twig_logic": "Pass the data in with the json filter and do this in Alpine.",
         "playthrough_hooks_missing": "Put data-rafflex-play on the element that plays the next entry, and set data-rafflex-result to win or lose on the element that reveals each outcome."
     },
     "game_rules": {

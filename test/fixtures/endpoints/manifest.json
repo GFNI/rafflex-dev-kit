@@ -1,7 +1,7 @@
 {
     "contract": 1,
-    "version": "1869db0ece93",
-    "generated_at": "2026-10-03T10:07:13+00:00",
+    "version": "7f550c69a11b",
+    "generated_at": "2026-10-03T10:28:19+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
@@ -10,9 +10,9 @@
         "fixtures": "__BASE_URL__/dev-kit/fixtures.json"
     },
     "versions": {
-        "rules": "657fa715ccab",
+        "rules": "bc13b4388267",
         "contexts": "f53ed4ad5d7e",
-        "skeletons": "41b16861a532",
+        "skeletons": "a58d93471afb",
         "libraries": "c052391c893d",
         "fixtures": "744e2c3c4f86"
     },

@@ -14,55 +14,55 @@
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {% set first = plays|first %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 2
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {{ play_count }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 3
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {% for play in plays %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 4
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {{ play.won ? 'win' : 'lose' }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 5
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {{ play.prize.name|upper }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 5
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {% endfor %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 6
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {% if plays|length > 3 %} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 7
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {{ plays|length }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 8
                 },
                 {
                     "code": "game_twig_logic",
                     "message": "Twig in a game only passes data in: {{ settings }} is more than {{ value|json }}, {{ files['tag'] }}, {{ settings.* }}, or a simple {% if %}.",
-                    "fix": "Pass the data in with |json and do this in Alpine.",
+                    "fix": "Pass the data in with the json filter and do this in Alpine.",
                     "line": 12
                 }
             ]
