@@ -246,7 +246,7 @@ describe('push', () => {
         const body = marketplace.pushes().at(-1)?.body;
 
         assert.equal(code, 0, JSON.stringify(output));
-        assert.deepEqual(body.uploads.map((/** @type {any} */ upload) => [upload.filename, upload.purpose, upload.sha256]), [['cover.png', 'cover', sha256(cover)], ['01.png', 'screenshot', sha256(shot)]]);
+        assert.deepEqual(body.uploads.map((/** @type {any} */ upload) => [upload.filename, upload.purpose, upload.sha256]), [['cover.png', 'cover', sha256(cover)], ['screenshot-01.png', 'screenshot', sha256(shot)]]);
         assert.deepEqual(body.screenshots_keep, [sha256(shot)]);
         assert.equal(output.removed_screenshots, 1);
         assert.deepEqual(output.uploaded.map((/** @type {any} */ entry) => entry.purpose), ['cover', 'screenshot']);

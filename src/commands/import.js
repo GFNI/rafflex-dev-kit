@@ -436,7 +436,7 @@ function describeChanges(changes, listingImages) {
 }
 
 /**
- * `import <bundle> [--force]`: write a product export bundle (from
+ * `import "<bundle>" [--force]`: write a product export bundle (from
  * export_product) as a product folder under its type folder, named after
  * its slug: the files verbatim, product.json with the server state, and
  * each media file downloaded into assets/ and checked against its hash.

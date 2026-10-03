@@ -88,7 +88,7 @@ export function looksLikeLink(argument) {
 }
 
 /**
- * Split `<product> <sync_url>` positionals, where the product is optional
+ * Split `<product> "<sync_url>"` positionals, where the product is optional
  * inside a product folder (`push "<sync_url>"`).
  *
  * @param {string[]} positionals
@@ -320,11 +320,20 @@ export function refusalFrom(response) {
     }
 
     if (status === 410) {
-        return new SyncLinkError('expired', 'The sync link has expired (it works for 15 minutes). Ask your AI for a new link with request_sync, then run the command again.', { status });
+        return new SyncLinkError('expired', 'The sync link has expired (it works for 15 minutes, and stops working when the creator disconnects the AI app that asked for it). Ask your AI for a new link with request_sync, then run the command again.', { status });
     }
 
     if (status === 403 || status === 401) {
-        return new SyncLinkError('forbidden', `${message ?? 'The marketplace refused this link.'} ${newLinkAdvice}`, { exitCode: 1, status });
+        // The marketplace's own message says what to do (a disconnected AI
+        // app is reconnected before a new link); add the kit's advice only
+        // when it does not.
+        const text = message ?? 'The marketplace refused this link.';
+
+        return new SyncLinkError('forbidden', /request_sync/.test(text) ? text : `${text} ${newLinkAdvice}`, { exitCode: 1, status });
+    }
+
+    if (status === 413) {
+        return new SyncLinkError('too_large', `${message ?? 'The push was not applied, because its body is larger than the marketplace reads in one push.'} Push less at once: files already go through upload links, so template.twig, options.json, or listing.md is far larger than any real one (most often an image or sound pasted into it as data). Move that file into assets/ and use it through files['<tag>'], run npx @rafflex/dev verify, then push again.`, { exitCode: 1, status });
     }
 
     if (status === 429) {

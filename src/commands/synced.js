@@ -34,7 +34,7 @@ export function failWithLinkError(context, error) {
 }
 
 /**
- * `synced <product> [<sync_url>]`: record the product's marketplace state
+ * `synced <product> ["<sync_url>"]`: record the product's marketplace state
  * as product.json's `remote` block. With a sync link (from request_sync)
  * it reads the state and the feedback from the link; without one it reads
  * a get_product result on standard input (the structured content, an MCP

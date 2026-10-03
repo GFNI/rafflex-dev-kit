@@ -211,9 +211,30 @@ export function refreshListingImagesMessage(name) {
 }
 
 /**
+ * The name a listing image is uploaded under: `cover.<ext>`, or
+ * `screenshot-<nn>.<ext>` by its place in listing/screenshots/ (filename
+ * order), with the file's own extension in lower case. The creator's
+ * filename never leaves the folder, so a screenshot saved with the
+ * system's default name (spaces and all) uploads without a rename; the
+ * marketplace's upload filename rule applies to media library files, whose
+ * names it stores and tags.
+ *
+ * @param {'cover'|'screenshot'} purpose
+ * @param {LocalListingImage} image
+ * @param {number} [position] The screenshot's place, from 1.
+ */
+export function listingImageUploadName(purpose, image, position = 1) {
+    const extension = image.extension === '' ? '' : `.${image.extension}`;
+
+    return purpose === 'cover' ? `${coverStem}${extension}` : `screenshot-${String(position).padStart(2, '0')}${extension}`;
+}
+
+/**
+ * @typedef {{path: string, upload_filename: string, sha256: string, size: number, mime_type: string}} PlannedListingImage
+ *
  * @typedef {object} ListingImagesPlan
- * @property {{path: string, sha256: string, size: number, mime_type: string, change: 'new'|'changed'}|null} cover
- * @property {{path: string, sha256: string, size: number, mime_type: string, change: 'new'}[]} screenshots
+ * @property {(PlannedListingImage & {change: 'new'|'changed'})|null} cover
+ * @property {(PlannedListingImage & {change: 'new'|'moved'})[]} screenshots
  * @property {string[]} removed_screenshots
  * @property {true} [remote_unknown] Present when nothing is planned because the marketplace's images are unknown.
  */
@@ -224,10 +245,19 @@ export function refreshListingImagesMessage(name) {
  * - the cover when there is a local one and the marketplace has none
  *   (`new`) or a different one, or one whose hash it did not report
  *   (`changed`: replacing a cover is harmless);
- * - each local screenshot whose hash the marketplace does not report;
+ * - each local screenshot whose hash the marketplace does not report
+ *   (`new`), and each one it has in another place than the folder's
+ *   filename order (`moved`: removed there and uploaded again after the
+ *   ones before it, because the marketplace adds every upload at the end);
  * - `removed_screenshots`, the marketplace's screenshot hashes with no
  *   local file, only when the folder holds any (the folder is then the
- *   creator's stated set; an empty folder leaves the marketplace's alone).
+ *   creator's stated set; an empty folder leaves the marketplace's alone);
+ *
+ * push keeps (`screenshots_keep`) the folder's screenshots except the moved
+ * ones. The marketplace removes nothing for an empty keep list, so the
+ * order is left as it is when keeping nothing would be the only way to fix
+ * it, and also while the marketplace holds a screenshot without a hash (it
+ * always keeps those).
  *
  * @param {LocalListingImages} local
  * @param {RemoteListingImages|null} remote
@@ -235,33 +265,46 @@ export function refreshListingImagesMessage(name) {
  */
 export function planListingImages(local, remote) {
     const remoteCover = remote?.cover ?? null;
-    const remoteHashes = new Set((remote?.screenshots ?? []).map((entry) => entry.sha256).filter((hash) => hash !== null));
-    const localHashes = new Set(local.screenshots.map((image) => image.sha256));
-    const entry = (/** @type {LocalListingImage} */ image) => ({ path: image.path, sha256: image.sha256, size: image.size, mime_type: image.mime_type });
+    const remoteScreenshots = remote?.screenshots ?? [];
+    const remoteHashes = new Set(remoteScreenshots.map((entry) => entry.sha256).filter((hash) => hash !== null));
+    const entry = (/** @type {LocalListingImage} */ image, /** @type {string} */ uploadName) => ({ path: image.path, upload_filename: uploadName, sha256: image.sha256, size: image.size, mime_type: image.mime_type });
     /** @type {ListingImagesPlan['cover']} */
     let cover = null;
 
     if (local.cover !== null && remoteCover === null) {
-        cover = { ...entry(local.cover), change: 'new' };
+        cover = { ...entry(local.cover, listingImageUploadName('cover', local.cover)), change: 'new' };
     }
 
     if (local.cover !== null && remoteCover !== null && remoteCover.sha256 !== local.cover.sha256) {
-        cover = { ...entry(local.cover), change: 'changed' };
+        cover = { ...entry(local.cover, listingImageUploadName('cover', local.cover)), change: 'changed' };
     }
 
-    const seen = new Set();
-    const screenshots = local.screenshots
-        .filter((image) => {
-            if (remoteHashes.has(image.sha256) || seen.has(image.sha256)) {
-                return false;
-            }
+    /** @type {{image: LocalListingImage, position: number}[]} */
+    const unique = [];
 
-            seen.add(image.sha256);
+    for (const [index, image] of local.screenshots.entries()) {
+        if (!unique.some((candidate) => candidate.image.sha256 === image.sha256)) {
+            unique.push({ image, position: index + 1 });
+        }
+    }
 
-            return true;
-        })
-        .map((image) => ({ ...entry(image), change: /** @type {'new'} */ ('new') }));
+    const localHashes = new Set(unique.map(({ image }) => image.sha256));
     const removed = local.screenshots.length === 0 ? [] : [...remoteHashes].filter((hash) => !localHashes.has(hash));
+    // What the marketplace shows once the keep list removed the rest, in its order.
+    const kept = [...new Set(remoteScreenshots.map((candidate) => candidate.sha256).filter((hash) => hash !== null && localHashes.has(hash)))];
+    let inPlace = 0;
+
+    while (inPlace < kept.length && inPlace < unique.length && kept[inPlace] === unique[inPlace].image.sha256) {
+        inPlace++;
+    }
+
+    const brandNew = unique.filter(({ image }) => !remoteHashes.has(image.sha256));
+    const reorderable = remoteScreenshots.every((candidate) => candidate.sha256 !== null) && inPlace + brandNew.length > 0;
+    const toUpload = reorderable ? unique.slice(inPlace) : brandNew;
+    const screenshots = toUpload.map(({ image, position }) => ({
+        ...entry(image, listingImageUploadName('screenshot', image, position)),
+        change: /** @type {'new'|'moved'} */ (remoteHashes.has(image.sha256) ? 'moved' : 'new'),
+    }));
 
     return { cover, screenshots, removed_screenshots: removed };
 }

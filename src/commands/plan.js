@@ -81,7 +81,7 @@ export function buildPlan(product, documents, now = Date.now()) {
         plan: {
             product: product.path,
             slug: product.slug,
-            nothing_to_push: !changes.template && !changes.options && !changes.listing && assets.length === 0 && listingImages.cover === null && listingImages.screenshots.length === 0,
+            nothing_to_push: !changes.template && !changes.options && !changes.listing && assets.length === 0 && listingImages.cover === null && listingImages.screenshots.length === 0 && listingImages.removed_screenshots.length === 0,
             stale_remote: isRemoteStale(remote, now),
             template: { changed: changes.template },
             options: changes.options ? { changed: true, option_overrides: options.value } : { changed: false },

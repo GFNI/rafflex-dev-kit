@@ -6,7 +6,7 @@ import { readListingImages } from '../listing-images.js';
 import { payloadMismatch, recordProductState, UnsafeSlugError } from '../record-sync.js';
 import { loadDocuments } from '../remote.js';
 import { submissionLines, submissionStatus } from '../submission.js';
-import { batchSizeFrom, buildPushRequest, inBatches, remoteForPlan, uploadKey } from '../push-request.js';
+import { batchSizeFrom, buildPushRequest, inBatches, PushRequestError, remoteForPlan, uploadKey } from '../push-request.js';
 import { callSyncLink, checkedUploadUrl, parseSyncLink, productAndLink, SyncLinkError, uploadFile, uploadOrigins } from '../sync-link.js';
 import { formatProductJson, loadWorkspace, readTemplate, resultsDirectoryName, selectProduct, withManifest, writeProductJson } from '../workspace.js';
 import { optionOverridesHash, readLocalState, remoteFromProduct, templateHash } from '../sync-state.js';
@@ -15,7 +15,7 @@ import { productFilesFingerprint, rulesFingerprint, saveVerifyResult, verifyProd
 import { messageOf, writeJson } from './output.js';
 
 /**
- * `push <product> <sync_url>` (PRD 45): push a product to the marketplace
+ * `push <product> "<sync_url>"` (PRD 45): push a product to the marketplace
  * in one command, through the sync link the creator's AI asked for with
  * request_sync. The link is never written to disk.
  *
@@ -45,7 +45,7 @@ import { messageOf, writeJson } from './output.js';
  *
  * Exit 0 when pushed or nothing to push; 1 when refused for a reason the
  * AI can fix or wait out (not_ready, conflict, in_review, wrong_link,
- * validation_failed, upload_failed, rate_limited, forbidden); 2 when it
+ * validation_failed, too_large, upload_failed, rate_limited, forbidden); 2 when it
  * cannot run (no_link, invalid_link, expired, unreachable, cannot_run,
  * unexpected_response, unsupported).
  *
@@ -158,7 +158,10 @@ async function verifyForPush(workspace, product, progress) {
 
 /**
  * Whether the folder's template and options differ from a draft read from
- * the marketplace.
+ * the marketplace. The draft's overrides are filtered against the draft's
+ * own template, as the folder's are against the folder's, so an override
+ * the platform still stores for a key its template no longer reads does
+ * not read as a difference.
  *
  * @param {import('../workspace.js').Product} product
  * @param {Record<string, any>} draft
@@ -170,7 +173,7 @@ function differsFromDraft(product, draft) {
         || typeof draft.template !== 'string'
         || local.template.sha256 !== templateHash(draft.template)
         || !('sha256' in local.options)
-        || local.options.sha256 !== optionOverridesHash(draft.option_overrides);
+        || local.options.sha256 !== optionOverridesHash(draft.option_overrides, draft.template);
 }
 
 /**
@@ -330,6 +333,10 @@ export async function runPushCommand(context) {
         built = buildPlan(planned, documents);
         request = buildPushRequest({ product, payload, plan: built.plan, template: readTemplate(product), listingImages: readListingImages(product.directory), documents });
     } catch (error) {
+        if (error instanceof PushRequestError) {
+            return report(context, result, { code: 'not_ready', message: `Not pushed: ${error.message}` }, 1, lines);
+        }
+
         return report(context, result, { code: 'cannot_run', message: messageOf(error) }, 2, lines);
     }
 

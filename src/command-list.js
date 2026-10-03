@@ -27,7 +27,7 @@ export const devKitCommands = [
     },
     {
         name: 'import',
-        usage: 'npx @rafflex/dev import <bundle>',
+        usage: 'npx @rafflex/dev import "<bundle>"',
         summary: 'Unpack a product export bundle into its type folder, or refresh an existing one.',
         json: true,
         positionals: { min: 1, max: 1 },
@@ -90,21 +90,21 @@ export const devKitCommands = [
     },
     {
         name: 'push',
-        usage: 'npx @rafflex/dev push <product> <sync_url>',
+        usage: 'npx @rafflex/dev push <product> "<sync_url>"',
         summary: 'Verify, then push only what changed (and create the product the first time) through a sync link from request_sync, and record the result.',
         json: true,
         positionals: { min: 0, max: 2 },
     },
     {
         name: 'synced',
-        usage: 'npx @rafflex/dev synced <product> [<sync_url>]',
+        usage: 'npx @rafflex/dev synced <product> ["<sync_url>"]',
         summary: "Record the product's marketplace state and feedback from a sync link, or a get_product result read from standard input.",
         json: true,
         positionals: { min: 0, max: 2 },
     },
     {
         name: 'release',
-        usage: 'npx @rafflex/dev release <product> [<sync_url>]',
+        usage: 'npx @rafflex/dev release <product> ["<sync_url>"]',
         summary: 'After submitting for review: close the Unreleased changelog section, tag the version, and mark it in review.',
         json: true,
         positionals: { min: 0, max: 2 },

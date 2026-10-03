@@ -182,17 +182,17 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.equal(code, 0, JSON.stringify(output.verify));
         assert.equal(output.nothing_to_push, false);
         assert.deepEqual(output.listing_images, {
-            cover: { path: 'listing/cover.png', sha256: sha(cover), size: cover.length, mime_type: 'image/png', change: 'new' },
-            screenshots: [{ path: 'listing/screenshots/02.png', sha256: sha(two), size: two.length, mime_type: 'image/png', change: 'new' }],
+            cover: { path: 'listing/cover.png', upload_filename: 'cover.png', sha256: sha(cover), size: cover.length, mime_type: 'image/png', change: 'new' },
+            screenshots: [{ path: 'listing/screenshots/02.png', upload_filename: 'screenshot-02.png', sha256: sha(two), size: two.length, mime_type: 'image/png', change: 'new' }],
             removed_screenshots: ['old'],
         });
         assert.equal(output.submission.ready, true);
 
         const human = await run(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
 
-        assert.match(human.stdout, /1\. request_media_upload: listing\/cover\.png with purpose cover, image\/png, \d+ bytes \(new\)/);
-        assert.match(human.stdout, /2\. request_media_upload: listing\/screenshots\/02\.png with purpose screenshot, image\/png, \d+ bytes \(new\)/);
-        assert.match(human.stdout, /1 screenshot is on the marketplace but not in listing\/screenshots\/\. Tell the creator to remove it in the browser\./);
+        assert.match(human.stdout, /1\. request_media_upload: listing\/cover\.png as filename cover\.png with purpose cover, image\/png, \d+ bytes \(new\)/);
+        assert.match(human.stdout, /2\. request_media_upload: listing\/screenshots\/02\.png as filename screenshot-02\.png with purpose screenshot, image\/png, \d+ bytes \(new\)/);
+        assert.match(human.stdout, /1 screenshot is on the marketplace but not in listing\/screenshots\/; push removes it\.\n {2}Without a shell, tell the creator to remove those screenshots in the browser before the uploads\./);
         assert.doesNotMatch(human.stdout, /Before review/);
     });
 
@@ -336,22 +336,24 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.deepEqual(knownPlan.output.listing_images.screenshots.map((/** @type {any} */ image) => image.path), ['listing/screenshots/01.png']);
     });
 
-    test('check blocks a cover or screenshot whose file name the upload refuses, with the name to use', async () => {
+    test('check takes a cover or screenshot under any file name, because push uploads it under a name of its own', async () => {
         const root = temporaryWorkspace({ products: [{ title: 'Spin to Win', template, listing: listing(`category_ids: [${firstCategory.id}]`) }] });
 
         addListingImages(join(root, 'games', 'spin-to-win'), {
-            'cover.png': png('cover'),
+            'Cover.PNG': png('cover'),
             'screenshots/Screen Shot 2026-10-03 at 10.00.00.png': png('one'),
             'screenshots/02-win.png': png('two'),
         });
 
-        const { code, output } = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const { output } = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const plan = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
 
-        assert.equal(code, 1);
-        assert.deepEqual(output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid').map((/** @type {any} */ issue) => [issue.file, issue.message]), [[
-            'listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png',
-            'listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png cannot be uploaded under this name. Use letters, numbers, dots, hyphens, and underscores only in file names. Rename it to listing/screenshots/Screen-Shot-2026-10-03-at-10.00.00.png.',
-        ]]);
+        assert.deepEqual(output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid'), []);
+        assert.deepEqual(plan.output.listing_images.cover.upload_filename, 'cover.png');
+        assert.deepEqual(plan.output.listing_images.screenshots.map((/** @type {any} */ image) => [image.path, image.upload_filename]), [
+            ['listing/screenshots/02-win.png', 'screenshot-01.png'],
+            ['listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png', 'screenshot-02.png'],
+        ]);
     });
 
     test('check blocks names the upload refuses, duplicates, a full library, and content that is not what its name says', async () => {

@@ -106,11 +106,18 @@ export async function startFakeMarketplace() {
         feedback: /** @type {Record<string, any>|null} */ (null),
         /** @type {((product: Record<string, any>) => any)|null} The template check a push answers with, made before its files arrive. */
         check: /** @type {((product: Record<string, any>) => any)|null} */ (null),
+        /** @type {number} The largest push body read, in bytes (the real one reads 4 MB). */
+        maxBodyBytes: 4 * 1024 * 1024,
+        /** @type {boolean} Whether the AI app that asked for the links was disconnected since. */
+        disconnected: false,
     };
     let baseUrl = '';
     /** Every tag the marketplace knows, by key, with the spelling it was first created with (tags are shared by every product). */
     const tags = new Map();
-    const uploadRules = JSON.parse(readFileSync(new URL('rules.json', endpointsDirectory), 'utf8')).upload_rules;
+    const rules = JSON.parse(readFileSync(new URL('rules.json', endpointsDirectory), 'utf8'));
+    const uploadRules = rules.upload_rules;
+    const maxScreenshots = rules.listing.images.screenshot.max_count;
+    const maxLibraries = 50;
     const filenamePattern = new RegExp(uploadRules.filename_pattern.pattern, uploadRules.filename_pattern.flags);
 
     const send = (/** @type {import('node:http').ServerResponse} */ response, /** @type {number} */ status, /** @type {any} */ body, /** @type {Record<string, string>} */ headers = {}) => {
@@ -153,7 +160,18 @@ export async function startFakeMarketplace() {
             return;
         }
 
-        // The request's own rules: each upload's file name.
+        // The request's own rules: how many libraries and kept screenshots, and each upload's file name.
+        const countIssues = [
+            ...(Array.isArray(body.libraries) && body.libraries.length > maxLibraries ? [{ code: 'invalid_argument', field: 'libraries', message: `A push can attach at most ${maxLibraries} approved libraries. Send only the libraries the template loads, then push again.` }] : []),
+            ...(Array.isArray(body.screenshots_keep) && body.screenshots_keep.length > maxScreenshots ? [{ code: 'invalid_argument', field: 'screenshots_keep', message: `A listing shows at most ${maxScreenshots} screenshots, so screenshots_keep can name at most ${maxScreenshots}. Keep at most ${maxScreenshots} images in listing/screenshots/, then push again.` }] : []),
+        ];
+
+        if (countIssues.length > 0) {
+            refuse(response, 422, 'validation_failed', 'The push was not applied, so nothing changed. Fix every listed issue and push again with the same link.', { issues: countIssues });
+
+            return;
+        }
+
         const filenameIssues = (Array.isArray(body.uploads) ? body.uploads : []).flatMap((/** @type {any} */ upload, /** @type {number} */ index) => (
             typeof upload?.filename === 'string' && upload.filename.length <= uploadRules.max_filename_length && filenamePattern.test(upload.filename)
                 ? []
@@ -386,8 +404,21 @@ export async function startFakeMarketplace() {
                 return;
             }
 
+            // Refused by size before the link is opened, as the real one does.
+            if (request.method === 'POST' && bytes.length > behaviour.maxBodyBytes) {
+                refuse(response, 413, 'too_large', 'The push was not applied, because its body is larger than the 4 MB a push may send. Files never travel in the push body: send them through the upload links the push returns. Check that the template and listing are the right files, then push again.');
+
+                return;
+            }
+
             if (link.expired) {
                 refuse(response, 410, 'expired', 'This sync link has expired. Call request_sync again for a new one.');
+
+                return;
+            }
+
+            if (behaviour.disconnected) {
+                refuse(response, 403, 'forbidden', 'The AI app that requested this sync link is no longer connected to the creator\'s account. Ask the creator to reconnect it, then call request_sync again for a new link.');
 
                 return;
             }

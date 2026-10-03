@@ -47,7 +47,7 @@
         },
         {
             "name": "import",
-            "usage": "npx @rafflex/dev import <bundle>",
+            "usage": "npx @rafflex/dev import \"<bundle>\"",
             "summary": "Unpacks a product export bundle into its type folder, or refreshes an existing folder, and commits it.",
             "json": true
         },
@@ -101,19 +101,19 @@
         },
         {
             "name": "push",
-            "usage": "npx @rafflex/dev push <product> <sync_url>",
+            "usage": "npx @rafflex/dev push <product> \"<sync_url>\"",
             "summary": "Pushes what the plan says changed through a request_sync link (template, options, listing, version, release notes, new files, libraries, the cover and screenshots), creates the product on its first push, and records the result. Refused while verify blocks or when the draft changed on the marketplace since the last sync.",
             "json": true
         },
         {
             "name": "synced",
-            "usage": "npx @rafflex/dev synced <product> [<sync_url>]",
+            "usage": "npx @rafflex/dev synced <product> [\"<sync_url>\"]",
             "summary": "Records the product's last known remote state and feedback from a request_sync link, or from a get_product result on standard input when the AI app has no shell, and commits the product folder.",
             "json": true
         },
         {
             "name": "release",
-            "usage": "npx @rafflex/dev release <product> [<sync_url>]",
+            "usage": "npx @rafflex/dev release <product> [\"<sync_url>\"]",
             "summary": "Closes the Unreleased changelog section after submit_for_review succeeds, tags the version, and marks it in review. With a request_sync link it records the fresh state too.",
             "json": true
         },

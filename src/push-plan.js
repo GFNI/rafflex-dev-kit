@@ -94,24 +94,34 @@ export function planListingImagesFor(local, remote) {
  * The plan's prose for listing images and refusals: one upload step per
  * image, and notes for screenshots to remove and locked files.
  *
- * @param {{listing_images: import('./listing-images.js').ListingImagesPlan, refusals: PlanRefusal[]}} plan
+ * @param {{product: string, slug: string|null, listing_images: import('./listing-images.js').ListingImagesPlan, refusals: PlanRefusal[]}} plan
  * @returns {{steps: string[], notes: string[]}}
  */
 export function planListingImageLines(plan) {
     const images = plan.listing_images;
     const steps = [
-        ...(images.cover === null ? [] : [images.cover]).map((cover) => `request_media_upload: ${cover.path} with purpose cover, ${cover.mime_type}, ${cover.size} bytes (${cover.change})`),
-        ...images.screenshots.map((screenshot) => `request_media_upload: ${screenshot.path} with purpose screenshot, ${screenshot.mime_type}, ${screenshot.size} bytes (new)`),
+        ...(images.cover === null ? [] : [images.cover]).map((cover) => `request_media_upload: ${cover.path} as filename ${cover.upload_filename} with purpose cover, ${cover.mime_type}, ${cover.size} bytes (${cover.change})`),
+        ...images.screenshots.map((screenshot) => `request_media_upload: ${screenshot.path} as filename ${screenshot.upload_filename} with purpose screenshot, ${screenshot.mime_type}, ${screenshot.size} bytes (${screenshot.change})`),
     ];
     /** @type {string[]} */
     const notes = [];
+    const moved = images.screenshots.filter((screenshot) => screenshot.change === 'moved').length;
+    const removedCount = images.removed_screenshots.length + moved;
 
     if (images.remote_unknown === true) {
-        notes.push('  Listing images are not planned: the recorded state does not say which the marketplace has. Refresh it with request_sync and npx @rafflex/dev synced first.');
+        notes.push(`  Listing images are not planned: the recorded state does not say which the marketplace has. Refresh it first: call request_sync with slug ${plan.slug ?? plan.product}, then run npx @rafflex/dev synced ${plan.slug ?? plan.product} "<sync_url>".`);
     }
 
     if (images.removed_screenshots.length > 0) {
-        notes.push(`  ${images.removed_screenshots.length} ${images.removed_screenshots.length === 1 ? 'screenshot is' : 'screenshots are'} on the marketplace but not in listing/screenshots/. Tell the creator to remove ${images.removed_screenshots.length === 1 ? 'it' : 'them'} in the browser.`);
+        notes.push(`  ${images.removed_screenshots.length} ${images.removed_screenshots.length === 1 ? 'screenshot is' : 'screenshots are'} on the marketplace but not in listing/screenshots/; push removes ${images.removed_screenshots.length === 1 ? 'it' : 'them'}.`);
+    }
+
+    if (moved > 0) {
+        notes.push(`  ${moved} ${moved === 1 ? 'screenshot is' : 'screenshots are'} on the marketplace in another order than listing/screenshots/; push removes ${moved === 1 ? 'it' : 'them'} there and uploads ${moved === 1 ? 'it' : 'them'} again, so the listing shows the folder's filename order.`);
+    }
+
+    if (removedCount > 0) {
+        notes.push('  Without a shell, tell the creator to remove those screenshots in the browser before the uploads.');
     }
 
     for (const refusal of plan.refusals) {

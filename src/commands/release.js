@@ -158,7 +158,7 @@ export function submittedState(payload, version) {
 }
 
 /**
- * `release <product> [<sync_url>]`: run after submit_for_review succeeds.
+ * `release <product> ["<sync_url>"]`: run after submit_for_review succeeds.
  * Closes the Unreleased changelog section under the version being worked
  * on, marks the draft as submitted in the recorded remote state (so the
  * app shows In review without another sync), and with git commits the
@@ -196,7 +196,7 @@ export async function runReleaseCommand(context) {
             const state = await readLinkState(workspace, link);
 
             if (state.payload === null) {
-                return failWithCode(context, { code: 'not_created', message: `That link is for a product not on the marketplace yet. Push ${product.path} first with npx @rafflex/dev push.` }, 1);
+                return failWithCode(context, { code: 'not_created', message: `That link is for a product not on the marketplace yet. Push ${product.path} first with npx @rafflex/dev push ${product.path} "<sync_url>" (a link from request_sync with no slug).` }, 1);
             }
 
             fresh = { payload: state.payload, feedback: state.feedback };
@@ -253,7 +253,7 @@ export async function runReleaseCommand(context) {
     const git = commitProduct(workspace.root, marked.directory, `Release ${name} ${product.version}`, tag);
 
     if (marked.slug === null) {
-        notes.push('No tag: this product has no slug yet. Push it with request_sync and npx @rafflex/dev push first.');
+        notes.push(`No tag: this product has no slug yet. Push it first: call request_sync with no slug, then run npx @rafflex/dev push ${product.path} "<sync_url>".`);
     }
 
     if (git.tag_existed) {

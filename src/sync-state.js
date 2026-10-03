@@ -169,7 +169,10 @@ export function readLocalState(product, documents = null) {
             throw new Error('it must be a JSON object');
         }
 
-        options = { sha256: optionOverridesHash(value, template?.text ?? null, documents?.contexts), value: normaliseOptionOverrides(value) };
+        // Filtered with the kit's own inference rules, never the published
+        // ones: the recorded remote hashes (remoteFromProduct) are made
+        // without them, and both sides must filter alike to compare.
+        options = { sha256: optionOverridesHash(value, template?.text ?? null), value: normaliseOptionOverrides(value) };
     } catch (error) {
         options = { error: `options.json cannot be read: ${/** @type {Error} */ (error).message}` };
     }

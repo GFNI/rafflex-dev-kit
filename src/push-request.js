@@ -56,6 +56,24 @@ export function inBatches(items, size) {
     return batches;
 }
 
+/** A push the kit refuses to build; the message says what to do instead. */
+export class PushRequestError extends Error {
+    name = 'PushRequestError';
+}
+
+/**
+ * The most screenshots a listing shows, as the rules publish it, or null
+ * when they do not.
+ *
+ * @param {any} rules
+ * @returns {number|null}
+ */
+export function maxScreenshotsFrom(rules) {
+    const maximum = rules?.listing?.images?.screenshot?.max_count;
+
+    return Number.isInteger(maximum) && maximum > 0 ? maximum : null;
+}
+
 /**
  * @param {string} value
  */
@@ -159,11 +177,13 @@ export function buildPushRequest({ product, payload, plan, template, listingImag
 
     const images = plan.listing_images;
 
+    // Under the generated name the plan gives each image, never the
+    // creator's own filename; screenshots in the folder's filename order.
     for (const image of [...(images.cover === null ? [] : [images.cover]), ...images.screenshots]) {
         const purpose = image === images.cover ? 'cover' : 'screenshot';
 
         uploads.push({
-            request: { filename: image.path.split('/').pop() ?? image.path, size_bytes: image.size, mime_type: image.mime_type, purpose, sha256: image.sha256 },
+            request: { filename: image.upload_filename, size_bytes: image.size, mime_type: image.mime_type, purpose, sha256: image.sha256 },
             path: image.path,
             file: join(product.directory, image.path),
         });
@@ -174,7 +194,18 @@ export function buildPushRequest({ product, payload, plan, template, listingImag
     }
 
     if (listingImages.screenshots.length > 0) {
-        body.screenshots_keep = [...new Set(listingImages.screenshots.map((image) => image.sha256))];
+        // A moved screenshot is removed there and uploaded again in its place.
+        const moved = new Set(images.screenshots.filter((image) => image.change === 'moved').map((image) => image.sha256));
+        const keep = [...new Set(listingImages.screenshots.map((image) => image.sha256))].filter((hash) => !moved.has(hash));
+        const maximum = maxScreenshotsFrom(documents.rules);
+
+        // check blocks more screenshots than the listing shows, so this
+        // only guards a push planned around that check.
+        if (maximum !== null && keep.length > maximum) {
+            throw new PushRequestError(`listing/screenshots/ holds ${keep.length} different screenshots; a listing shows at most ${maximum}. Keep at most ${maximum} (they show in filename order), run npx @rafflex/dev verify ${product.slug ?? product.path}, then push again.`);
+        }
+
+        body.screenshots_keep = keep;
     }
 
     const changed = {
