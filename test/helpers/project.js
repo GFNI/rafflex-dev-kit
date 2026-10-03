@@ -14,6 +14,25 @@ export function fixtureDocuments() {
 }
 
 /**
+ * The prompts.json fixture, as the app's prompt source returns it.
+ *
+ * @param {string} [baseUrl]
+ */
+export function fixturePrompts(baseUrl = 'https://marketplace.rafflex.io') {
+    return JSON.parse(readFileSync(new URL('prompts.json', endpointsDirectory), 'utf8').replaceAll('__BASE_URL__', baseUrl));
+}
+
+/**
+ * A prompt source for startDevServer that serves the fixture (or a given
+ * document) without any network.
+ *
+ * @param {any} [document]
+ */
+export function stubPrompts(document = fixturePrompts()) {
+    return { get: async () => ({ document, error: document === null ? 'The marketplace has not sent its prompts yet.' : null }) };
+}
+
+/**
  * A temporary folder.
  *
  * @param {string} [prefix]

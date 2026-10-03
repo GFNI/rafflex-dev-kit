@@ -10,7 +10,7 @@ import { listingHash, optionOverridesHash, templateHash } from '../src/sync-stat
 import { loadWorkspace } from '../src/workspace.js';
 import { isolatedGitEnv } from './helpers/cli.js';
 import { startFixtureServer } from './helpers/fixture-server.js';
-import { addProduct, fixtureDocuments, temporaryWorkspace } from './helpers/project.js';
+import { addProduct, fixtureDocuments, stubPrompts, temporaryWorkspace } from './helpers/project.js';
 
 const documents = fixtureDocuments();
 const loaded = { documents, warnings: [], offline: false, baseUrl: 'https://marketplace.rafflex.io', manifest: null, cacheDirectory: '' };
@@ -139,18 +139,26 @@ describe('workspace index', () => {
                 { type: 'block', title: 'Winner Wall', slug: 'winner-wall', template },
             ],
         });
-        server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, watchFiles: false });
+        server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, watchFiles: false, prompts: stubPrompts(), detect: () => [] });
     });
 
     after(() => server.close());
 
-    test('serves the index page at the root', async () => {
-        const page = await get(server.url);
+    test('serves the app at every page, with the start token embedded', async () => {
+        for (const path of ['', 'products', 'new', 'p/games/spin-to-win/']) {
+            const page = await get(`${server.url}${path}`);
 
-        assert.equal(page.status, 200);
-        assert.match(page.body, /<title>Rafflex workspace<\/title>/);
-        assert.match(page.body, /src="\/__rafflex\/workspace\.js"/);
-        assert.equal((await get(`${server.url}__rafflex/workspace.js`)).status, 200);
+            assert.equal(page.status, 200, path);
+            assert.match(page.body, /<title>Rafflex<\/title>/, path);
+            assert.ok(page.body.includes(`<meta name="rafflex-token" content="${server.token}">`), path);
+            assert.match(String(page.headers['content-security-policy']), /default-src 'self'/, path);
+            assert.match(String(page.headers['content-security-policy']), /frame-ancestors 'none'/, path);
+        }
+
+        assert.match(server.token, /^[0-9a-f]{48}$/);
+        assert.equal((await get(`${server.url}__rafflex/app.js`)).status, 200);
+        assert.equal((await get(`${server.url}__rafflex/app.css`)).status, 200);
+        assert.equal((await get(`${server.url}__rafflex/alpine.js`)).status, 200);
     });
 
     test('lists every product with its version, remote state, and local changes', async () => {
@@ -177,15 +185,29 @@ describe('workspace index', () => {
         assert.equal(byPath['blocks/winner-wall'].remote.synced, false);
     });
 
+    test('gives every product its state, last test result, folder, and hand off prompt', async () => {
+        const payload = JSON.parse((await get(`${server.url}__rafflex/products`)).body);
+        const byPath = Object.fromEntries(payload.products.map((/** @type {any} */ product) => [product.path, product]));
+
+        assert.equal(byPath['games/brand-new'].state.label, 'Not pushed yet');
+        assert.equal(byPath['games/spin-to-win'].state.label, 'In review');
+        assert.equal(byPath['games/scratch-card'].state.label, 'Changes requested');
+        assert.equal(byPath['blocks/winner-wall'].state.label, 'Changes not pushed');
+        assert.equal(byPath['games/brand-new'].test.label, 'Not tested');
+        assert.equal(byPath['games/brand-new'].test.running, false);
+        assert.equal(byPath['games/brand-new'].directory, join(root, 'games', 'brand-new'));
+        assert.equal(byPath['games/brand-new'].hand_to_ai, 'Pick up Brand New in games/brand-new.');
+    });
+
     test('an empty workspace shows how to create a product', async () => {
-        const empty = await startDevServer({ workspace: loadWorkspace(temporaryWorkspace()), loaded, port: 0, watchFiles: false });
+        const empty = await startDevServer({ workspace: loadWorkspace(temporaryWorkspace()), loaded, port: 0, watchFiles: false, prompts: stubPrompts(), detect: () => [] });
 
         try {
             const payload = JSON.parse((await get(`${empty.url}__rafflex/products`)).body);
             const page = await get(empty.url);
 
             assert.deepEqual(payload.products, []);
-            assert.ok(page.body.includes('npx @rafflex/dev new game "My game"'));
+            assert.ok(page.body.includes('No products yet'));
         } finally {
             await empty.close();
         }
@@ -207,7 +229,7 @@ describe('per product routes', () => {
             ],
         });
         writeFileSync(join(root, 'games', 'outside.png'), 'outside');
-        server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, watchFiles: false });
+        server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, watchFiles: false, prompts: stubPrompts(), detect: () => [] });
     });
 
     after(() => server.close());
@@ -291,7 +313,7 @@ describe('workspace watcher', () => {
     for (const pollFiles of [false, true]) {
         test(`reloads only the changed product's preview, and refreshes the index (${pollFiles ? 'polling' : 'fs.watch'})`, async () => {
             const root = temporaryWorkspace({ products: [{ title: 'Alpha', template }, { title: 'Bravo', template }] });
-            const server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, pollFiles });
+            const server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, pollFiles, prompts: stubPrompts(), detect: () => [] });
             const alpha = listen(`${server.url}p/games/alpha/__rafflex/events`);
             const bravo = listen(`${server.url}p/games/bravo/__rafflex/events`);
             const index = listen(`${server.url}__rafflex/events`);

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="rafflex-token" content="__RAFFLEX_TOKEN__">
+    <title>Rafflex</title>
+    <link rel="stylesheet" href="/__rafflex/app.css">
+    <script src="/__rafflex/app.js" defer></script>
+    <script src="/__rafflex/alpine.js" defer></script>
+</head>
+<body>
+<div x-data="rafflexApp" x-cloak class="shell">
+    <header class="topbar">
+        <a href="/" data-link class="brand">Rafflex</a>
+        <nav class="nav" aria-label="Main">
+            <a href="/" data-link :aria-current="route.name === 'home' ? 'page' : false">Home</a>
+            <a href="/products" data-link :aria-current="['products', 'product'].includes(route.name) ? 'page' : false">Products</a>
+        </nav>
+        <span class="muted truncate" x-text="home?.workspace ?? ''"></span>
+    </header>
+
+    <p class="banner" x-show="offline" x-cloak>The app stopped. Start it again with <code>npx @rafflex/dev</code> in your workspace.</p>
+
+    <!-- Home -->
+    <main class="page" x-show="route.name === 'home'">
+        <section class="card">
+            <h1>Build with your AI</h1>
+            <template x-if="home?.get_started">
+                <div class="stack">
+                    <div class="prompt">
+                        <pre x-text="home.get_started.text"></pre>
+                        <button type="button" class="button" @click="copy(home.get_started.text, 'get_started')" x-text="copied === 'get_started' ? 'Copied' : 'Copy'"></button>
+                    </div>
+                    <p class="muted" x-text="home.get_started.description"></p>
+                </div>
+            </template>
+            <p class="muted" x-show="home && !home.get_started" x-text="home?.prompts_error"></p>
+            <div class="row">
+                <a href="/new?type=game" data-link class="button primary">New game</a>
+                <a href="/new?type=block" data-link class="button">New block</a>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Connect your AI</h2>
+            <p class="muted" x-show="home && detectedClients.length === 0">We did not find an AI app on this computer. Pick yours below.</p>
+            <ul class="list">
+                <template x-for="client in detectedClients" :key="client.key">
+                    <li class="client">
+                        <div class="row spread">
+                            <strong x-text="client.label"></strong>
+                            <span class="badge badge-ok">On this computer</span>
+                        </div>
+                        <div class="prompt compact">
+                            <pre x-text="client.connect"></pre>
+                            <button type="button" class="button" @click="copy(client.connect, client.key)" x-text="copied === client.key ? 'Copied' : 'Copy'"></button>
+                        </div>
+                        <p class="muted small" x-text="client.kind === 'link' ? 'Open this link to connect.' : 'Run this in a terminal to connect.'"></p>
+                    </li>
+                </template>
+            </ul>
+            <details class="more" x-show="otherClients.length > 0">
+                <summary x-text="detectedClients.length === 0 ? 'AI apps' : 'Other AI apps'"></summary>
+                <ul class="list">
+                    <template x-for="client in otherClients" :key="client.key">
+                        <li class="client">
+                            <strong x-text="client.label"></strong>
+                            <div class="prompt compact">
+                                <pre x-text="client.connect"></pre>
+                                <button type="button" class="button" @click="copy(client.connect, client.key)" x-text="copied === client.key ? 'Copied' : 'Copy'"></button>
+                            </div>
+                        </li>
+                    </template>
+                </ul>
+            </details>
+            <p class="small" x-show="home?.links?.web_chat"><a :href="home?.links?.web_chat" target="_blank" rel="noopener">Using claude.ai, Claude Desktop, or ChatGPT? Follow these steps.</a></p>
+        </section>
+
+        <section class="health" aria-label="Health">
+            <template x-for="item in home?.health ?? []" :key="item.key">
+                <div class="health-item" :class="item.ok ? 'ok' : 'problem'">
+                    <span class="dot" aria-hidden="true"></span>
+                    <span x-text="item.label"></span>
+                    <span class="muted" x-show="item.fix" x-text="item.fix"></span>
+                </div>
+            </template>
+        </section>
+    </main>
+
+    <!-- Products -->
+    <main class="page wide" x-show="route.name === 'products'">
+        <div class="row spread">
+            <h1>Products</h1>
+            <a href="/new" data-link class="button">New product</a>
+        </div>
+        <div class="card empty" x-show="products !== null && products.length === 0">
+            <h2>No products yet</h2>
+            <p class="muted">Start one here, or ask your AI to. It shows up by itself.</p>
+            <div class="row">
+                <a href="/new?type=game" data-link class="button primary">New game</a>
+                <a href="/new?type=block" data-link class="button">New block</a>
+            </div>
+        </div>
+        <ul class="grid" aria-label="Products">
+            <template x-for="product in products ?? []" :key="product.path">
+                <li class="card product-card">
+                    <div class="stack tight">
+                        <a :href="product.url" data-link class="title" x-text="product.title"></a>
+                        <span class="muted small" x-text="`${typeLabel(product.type)} · ${product.version}`"></span>
+                    </div>
+                    <div class="row wrap">
+                        <span class="badge" :class="`badge-${product.state.tone}`" x-text="product.state.label"></span>
+                        <span class="badge" :class="`badge-${product.test.tone}`" x-text="product.test.running ? 'Testing' : product.test.label"></span>
+                    </div>
+                    <div class="row">
+                        <a :href="product.url" data-link class="button primary">Preview</a>
+                        <details class="menu" @click.outside="$el.open = false">
+                            <summary class="button icon" aria-label="More actions">&hellip;</summary>
+                            <div class="menu-items">
+                                <button type="button" @click="$el.closest('details').open = false; startTest(product)" :disabled="product.test.running">Test</button>
+                                <button type="button" @click="$el.closest('details').open = false; copy(product.hand_to_ai ?? '', `hand-${product.path}`)" :disabled="!product.hand_to_ai">Hand to AI</button>
+                                <button type="button" @click="$el.closest('details').open = false; openFolder(product)">Open folder</button>
+                                <button type="button" @click="$el.closest('details').open = false; copy(product.directory, `path-${product.path}`)">Copy path</button>
+                            </div>
+                        </details>
+                        <span class="muted small" x-show="copied === `hand-${product.path}`">Prompt copied</span>
+                        <span class="muted small" x-show="copied === `path-${product.path}`">Path copied</span>
+                    </div>
+                </li>
+            </template>
+        </ul>
+        <p class="error" x-show="actionError" x-text="actionError"></p>
+    </main>
+
+    <!-- Product -->
+    <main class="page wide" x-show="route.name === 'product'">
+        <template x-if="product">
+            <div class="stack">
+                <div class="row spread wrap">
+                    <div class="stack tight">
+                        <a href="/products" data-link class="muted small">Products</a>
+                        <h1 x-text="product.title"></h1>
+                        <div class="row wrap">
+                            <span class="muted small" x-text="`${typeLabel(product.type)} · ${product.version} · ${product.path}`"></span>
+                            <span class="badge" :class="`badge-${product.state.tone}`" x-text="product.state.label"></span>
+                            <span class="badge" :class="`badge-${product.test.tone}`" x-text="product.test.running ? 'Testing' : product.test.label"></span>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <button type="button" class="button primary" @click="tab = 'test'; startTest(product)" :disabled="product.test.running">Test</button>
+                        <details class="menu" @click.outside="$el.open = false">
+                            <summary class="button icon" aria-label="More actions">&hellip;</summary>
+                            <div class="menu-items right">
+                                <button type="button" @click="$el.closest('details').open = false; copy(product.prompts.hand_to_ai?.text ?? '', 'hand')" :disabled="!product.prompts.hand_to_ai">Hand to AI</button>
+                                <button type="button" @click="$el.closest('details').open = false; openFolder(product)">Open folder</button>
+                                <button type="button" @click="$el.closest('details').open = false; copy(product.directory, 'path')">Copy path</button>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                <p class="muted small" x-show="copied === 'hand'">Prompt copied. Paste it into your AI.</p>
+                <p class="muted small" x-show="copied === 'path'">Path copied.</p>
+                <p class="error" x-show="actionError" x-text="actionError"></p>
+
+                <section class="card callout" x-show="created && newProductPrompt">
+                    <h2>Now tell your AI what to build</h2>
+                    <div class="prompt">
+                        <pre x-text="newProductPrompt"></pre>
+                        <button type="button" class="button" @click="copy(newProductPrompt, 'created')" x-text="copied === 'created' ? 'Copied' : 'Copy'"></button>
+                    </div>
+                    <p class="muted small">Replace the part in brackets, then paste it into your AI.</p>
+                </section>
+
+                <div class="tabs" role="tablist">
+                    <template x-for="item in tabs" :key="item.key">
+                        <button type="button" role="tab" :aria-selected="tab === item.key" @click="setTab(item.key)" x-text="item.label"></button>
+                    </template>
+                </div>
+
+                <!-- Preview -->
+                <section x-show="tab === 'preview'" class="stack">
+                    <div class="row wrap controls">
+                        <label class="control" x-show="product.type === 'game'">
+                            <span>Scenario</span>
+                            <select x-model="preview.scenario" @change="previewChanged()">
+                                <template x-for="scenario in product.scenarios" :key="scenario.value">
+                                    <option :value="scenario.value" x-text="scenario.label" :selected="scenario.value === preview.scenario"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <label class="control" x-show="product.type === 'game'">
+                            <span>Plays</span>
+                            <input type="number" inputmode="numeric" :min="product.play_count.min" :max="product.play_count.max" x-model.number="preview.playCount" @change="previewChanged()">
+                        </label>
+                        <div class="segmented" role="group" aria-label="Device">
+                            <template x-for="device in devices" :key="device.key">
+                                <button type="button" :aria-pressed="preview.device === device.key" @click="preview.device = device.key; rememberQuery()" x-text="device.label"></button>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="frame" :data-device="preview.device">
+                        <iframe title="Preview" sandbox="allow-scripts" :src="frameUrl"></iframe>
+                    </div>
+                    <p class="small" :class="previewProblems.length > 0 ? 'error' : 'muted'" x-text="previewProblems.length > 0 ? `${previewProblems.length} ${previewProblems.length === 1 ? 'problem' : 'problems'} in this scenario` : 'No problems in this scenario'"></p>
+                    <ul class="list" x-show="previewProblems.length > 0">
+                        <template x-for="(issue, index) in previewProblems" :key="index">
+                            <li class="issue">
+                                <span x-text="issue.message"></span>
+                                <span class="muted small" x-text="issue.fix"></span>
+                            </li>
+                        </template>
+                    </ul>
+                </section>
+
+                <!-- Test -->
+                <section x-show="tab === 'test'" class="stack">
+                    <div class="row wrap">
+                        <button type="button" class="button primary" @click="startTest(product)" :disabled="product.test.running" x-text="product.test.running ? 'Testing' : 'Run test'"></button>
+                        <span class="muted small" x-show="!product.test.running && product.result?.at" x-text="product.result ? `Last run ${timeAgo(product.result.at)}` : ''"></span>
+                    </div>
+                    <pre class="log" x-show="product.test.running || testLines.length > 0" x-text="testLines.slice(-12).join('\n')"></pre>
+
+                    <p class="muted" x-show="!product.result && !product.test.running">Not tested yet. Run a test to check every scenario.</p>
+
+                    <template x-if="product.result">
+                        <div class="stack">
+                            <div class="card result" :class="product.result.status === 'passed' ? 'passed' : 'failed'">
+                                <strong x-text="product.result.status === 'passed' ? 'Passed' : product.result.blocking.length > 0 ? `${product.result.blocking.length} ${product.result.blocking.length === 1 ? 'issue blocks' : 'issues block'} review` : 'Issues'"></strong>
+                                <span class="muted small" x-show="product.result.error" x-text="product.result.error"></span>
+                                <template x-for="note in product.result.notes" :key="note">
+                                    <span class="muted small" x-text="note"></span>
+                                </template>
+                            </div>
+
+                            <ul class="list" x-show="product.result.blocking.length > 0">
+                                <template x-for="(issue, index) in product.result.blocking" :key="index">
+                                    <li class="issue blocking">
+                                        <strong x-text="issue.message"></strong>
+                                        <span class="muted small" x-text="issueWhere(issue)"></span>
+                                        <span class="small" x-show="issue.fix" x-text="issue.fix"></span>
+                                        <div class="row">
+                                            <button type="button" class="button small" @click="copy(product.prompts.fix_issue[index] ?? '', `fix-${index}`)" :disabled="!product.prompts.fix_issue[index]" x-text="copied === `fix-${index}` ? 'Copied' : 'Ask your AI to fix this'"></button>
+                                        </div>
+                                    </li>
+                                </template>
+                            </ul>
+
+                            <details class="more" x-show="product.result.warnings.length > 0">
+                                <summary x-text="`${product.result.warnings.length} ${product.result.warnings.length === 1 ? 'suggestion' : 'suggestions'}`"></summary>
+                                <ul class="list">
+                                    <template x-for="(issue, index) in product.result.warnings" :key="index">
+                                        <li class="issue">
+                                            <span x-text="issue.message"></span>
+                                            <span class="muted small" x-text="issue.fix"></span>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </details>
+
+                            <template x-if="product.result.playthrough.length > 0">
+                                <div class="stack">
+                                    <h2>Playthrough</h2>
+                                    <template x-for="run in product.result.playthrough" :key="run.scenario">
+                                        <div class="card">
+                                            <div class="row spread">
+                                                <strong x-text="scenarioLabel(run.scenario)"></strong>
+                                                <span class="badge" :class="run.passed ? 'badge-ok' : 'badge-error'" x-text="run.passed ? 'Passed' : 'Wrong result'"></span>
+                                            </div>
+                                            <p class="muted small" x-show="run.message" x-text="run.message"></p>
+                                            <p class="muted small" x-show="run.plays.length === 0">No plays. The empty state showed.</p>
+                                            <ol class="plays">
+                                                <template x-for="play in run.plays" :key="play.number">
+                                                    <li :class="play.passed ? '' : 'error'" x-text="`Play ${play.number}: should show ${play.expected ?? 'a result'}, showed ${play.actual ?? 'nothing'}`"></li>
+                                                </template>
+                                            </ol>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <template x-if="product.result.screenshots.length > 0">
+                                <div class="stack">
+                                    <h2>Screenshots</h2>
+                                    <template x-for="group in screenshotGroups" :key="group.scenario">
+                                        <div class="stack tight">
+                                            <strong class="small" x-text="scenarioLabel(group.scenario)"></strong>
+                                            <div class="shots">
+                                                <template x-for="shot in group.shots" :key="shot.path">
+                                                    <a class="shot" :href="resultUrl(shot.path)" target="_blank" rel="noopener">
+                                                        <img :src="resultUrl(shot.path)" :alt="`${scenarioLabel(group.scenario)} ${shot.device ?? ''}`" loading="lazy">
+                                                        <span class="muted small" x-text="shot.device ?? shot.path"></span>
+                                                    </a>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </section>
+
+                <!-- Get it live -->
+                <section x-show="tab === 'live'" class="stack">
+                    <div class="card stack">
+                        <div class="row">
+                            <span class="badge" :class="`badge-${product.publish.state.tone}`" x-text="product.publish.state.label"></span>
+                        </div>
+                        <p x-text="product.publish.next"></p>
+                        <p class="error small" x-show="product.publish.disabled" x-text="product.publish.reason"></p>
+                        <template x-if="product.publish.prompt">
+                            <div class="prompt">
+                                <pre x-text="product.publish.prompt.text"></pre>
+                                <button type="button" class="button primary" @click="copy(product.publish.prompt.text, 'publish')" x-text="copied === 'publish' ? 'Copied' : product.publish.disabled ? 'Copy fix prompt' : 'Copy'"></button>
+                            </div>
+                        </template>
+                        <p class="muted small">Your AI pushes and submits through your account. Nothing goes live until our team approves it.</p>
+                    </div>
+                </section>
+
+                <!-- Prompts -->
+                <section x-show="tab === 'prompts'" class="stack">
+                    <p class="muted" x-show="product.prompts.list.length === 0">Prompts did not load. Check your internet connection and reload.</p>
+                    <template x-for="prompt in product.prompts.list" :key="prompt.key">
+                        <div class="card stack tight">
+                            <strong x-text="prompt.title"></strong>
+                            <span class="muted small" x-text="prompt.description"></span>
+                            <div class="prompt">
+                                <pre x-text="prompt.text"></pre>
+                                <button type="button" class="button" @click="copy(prompt.text, `prompt-${prompt.key}`)" x-text="copied === `prompt-${prompt.key}` ? 'Copied' : 'Copy'"></button>
+                            </div>
+                        </div>
+                    </template>
+                </section>
+
+                <!-- Changelog -->
+                <section x-show="tab === 'changelog'" class="stack">
+                    <h2>Unreleased</h2>
+                    <pre class="notes" x-show="product.changelog" x-text="product.changelog"></pre>
+                    <p class="muted" x-show="!product.changelog">No notes yet. Your AI writes them as it works.</p>
+                </section>
+            </div>
+        </template>
+        <p class="muted" x-show="!product && productError" x-text="productError"></p>
+    </main>
+
+    <!-- New product -->
+    <main class="page" x-show="route.name === 'new'">
+        <section class="card stack">
+            <h1>New product</h1>
+            <form class="stack" @submit.prevent="createProduct()">
+                <label class="field">
+                    <span>Name</span>
+                    <input type="text" x-model="newProduct.title" maxlength="120" placeholder="Spin to Win" required>
+                </label>
+                <div class="segmented" role="group" aria-label="Type">
+                    <template x-for="type in home?.types ?? []" :key="type.value">
+                        <button type="button" :aria-pressed="newProduct.type === type.value" @click="newProduct.type = type.value" x-text="type.label"></button>
+                    </template>
+                </div>
+                <div class="row">
+                    <button type="submit" class="button primary" :disabled="newProduct.creating || newProduct.title.trim() === ''" x-text="newProduct.creating ? 'Creating' : 'Create'"></button>
+                </div>
+                <p class="error" x-show="newProduct.error" x-text="newProduct.error"></p>
+            </form>
+        </section>
+        <section class="card stack" x-show="aiStartPrompt">
+            <h2>Or ask your AI to start it for you</h2>
+            <div class="prompt">
+                <pre x-text="aiStartPrompt"></pre>
+                <button type="button" class="button" @click="copy(aiStartPrompt, 'ai-start')" x-text="copied === 'ai-start' ? 'Copied' : 'Copy'"></button>
+            </div>
+        </section>
+    </main>
+</div>
+</body>
+</html>

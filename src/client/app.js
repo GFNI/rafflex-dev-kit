@@ -1,281 +1,469 @@
-// The preview page: scenario, play count, and device controls around the
-// sandboxed frame, a problems panel fed by the kit's checks and by the
-// frame's CSP and script error reports, and live reload over SSE. Served
-// at /p/<type folder>/<folder>/, so every URL here is relative to that
-// product's prefix.
+// The Rafflex app: Home, Products, Product, and New product, served by the
+// kit on 127.0.0.1. It shows what is happening and hands everything else to
+// the creator's AI as ready made prompts. Live: the server's event stream
+// refreshes products and previews as the AI works. Actions carry the start
+// token embedded in this page.
 
-const elements = {
-    title: document.getElementById('project-title'),
-    type: document.getElementById('project-type'),
-    scenario: document.getElementById('scenario'),
-    scenarioControl: document.getElementById('scenario-control'),
-    playCount: document.getElementById('play-count'),
-    playCountControl: document.getElementById('play-count-control'),
-    deviceButtons: [...document.querySelectorAll('[data-device]')],
-    frameWrapper: document.getElementById('frame-wrapper'),
-    frame: document.getElementById('preview'),
-    problems: document.getElementById('problems'),
-    toggle: document.getElementById('problems-toggle'),
-    summary: document.getElementById('problems-summary'),
-    body: document.getElementById('problems-body'),
-    warnings: document.getElementById('warnings'),
-    list: document.getElementById('problem-list'),
-    note: document.getElementById('verdict-note'),
-};
+const token = document.querySelector('meta[name="rafflex-token"]')?.getAttribute('content') ?? '';
+const placeholders = ['title', 'path', 'slug', 'type', 'version', 'live_version', 'issues', 'issue'];
 
-let nonBlockingCodes = ['option_warning', 'unknown_file_tag', 'game_twig_logic', 'playthrough_hooks_missing', 'unformatted', 'script_lint', 'alpine_state', 'markup'];
-const params = new URLSearchParams(location.search);
-const state = {
-    config: null,
-    scenario: params.get('scenario'),
-    playCount: Number.parseInt(params.get('play_count') ?? '', 10),
-    device: params.get('device') ?? 'desktop',
-    revision: 0,
-    checkIssues: [],
-    frameIssues: [],
-    warnings: [],
-    note: '',
-    error: null,
-};
-
-function remember() {
-    const query = new URLSearchParams({ scenario: state.scenario, play_count: String(state.playCount), device: state.device });
-
-    history.replaceState(null, '', `?${query}`);
+function fillPrompt(text, values) {
+    return String(text ?? '').replace(/\{([a-z_]+)\}/g, (match, name) => (placeholders.includes(name) && values[name] ? values[name] : match));
 }
 
-function selectionQuery() {
-    return new URLSearchParams({ scenario: state.scenario, play_count: String(state.playCount) }).toString();
+function slugify(title) {
+    return title.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-function reloadFrame() {
-    state.frameIssues = [];
-    state.revision++;
-    elements.frame.src = `frame?${selectionQuery()}&v=${state.revision}`;
+function productBase(path) {
+    return `/p/${path.split('/').map(encodeURIComponent).join('/')}/`;
 }
 
-async function refreshProblems() {
-    try {
-        const response = await fetch(`__rafflex/problems?${selectionQuery()}`, { cache: 'no-store' });
-        const payload = await response.json();
+function parseRoute(location) {
+    const path = location.pathname;
 
-        state.checkIssues = payload.issues ?? [];
-        nonBlockingCodes = payload.warning_codes ?? nonBlockingCodes;
-        state.warnings = payload.warnings ?? [];
-        state.note = payload.note ?? '';
-        state.error = payload.error ?? null;
-    } catch (error) {
-        state.error = `Could not reach the kit's server (${error.message}). Is it still running?`;
+    if (path.startsWith('/p/')) {
+        const [type, folder] = path.slice(3).split('/').map(decodeURIComponent);
+
+        return { name: 'product', path: `${type}/${folder}` };
     }
 
-    renderProblems();
-}
-
-function refresh() {
-    remember();
-    reloadFrame();
-    refreshProblems();
-}
-
-/**
- * Identical messages from several scenarios collapse into one entry that
- * names every scenario.
- */
-function groupedIssues() {
-    const groups = new Map();
-
-    for (const issue of [...state.checkIssues, ...state.frameIssues]) {
-        const key = `${issue.code}|${issue.message}|${issue.file ?? ''}`;
-        const group = groups.get(key) ?? { ...issue, scenarios: [] };
-
-        if (issue.scenario && !group.scenarios.includes(issue.scenario)) {
-            group.scenarios.push(issue.scenario);
-        }
-
-        groups.set(key, group);
+    if (path === '/products') {
+        return { name: 'products' };
     }
 
-    return [...groups.values()];
+    if (path === '/new') {
+        return { name: 'new' };
+    }
+
+    return { name: 'home' };
 }
 
-function scenarioLabel(value) {
-    return state.config?.scenarios.find((scenario) => scenario.value === value)?.label ?? value;
-}
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('rafflexApp', () => ({
+        route: parseRoute(location),
+        home: null,
+        products: null,
+        product: null,
+        productError: null,
+        actionError: null,
+        offline: false,
+        copied: null,
+        created: false,
+        tab: 'preview',
+        tabs: [
+            { key: 'preview', label: 'Preview' },
+            { key: 'test', label: 'Test' },
+            { key: 'live', label: 'Get it live' },
+            { key: 'prompts', label: 'Prompts' },
+            { key: 'changelog', label: 'Changelog' },
+        ],
+        devices: [
+            { key: 'phone', label: 'Phone' },
+            { key: 'tablet', label: 'Tablet' },
+            { key: 'desktop', label: 'Desktop' },
+        ],
+        preview: { scenario: null, playCount: null, device: 'desktop', revision: 0 },
+        previewProblems: [],
+        frameIssues: [],
+        testLines: [],
+        newProduct: { title: '', type: 'game', creating: false, error: null },
 
-function renderProblems() {
-    const issues = groupedIssues();
-    const blocking = issues.filter((issue) => !nonBlockingCodes.includes(issue.code));
-    const reportOnly = issues.length - blocking.length;
+        init() {
+            document.addEventListener('click', (event) => {
+                const link = event.target.closest('a[data-link]');
 
-    elements.warnings.replaceChildren(...[...state.warnings, ...(state.error ? [state.error] : [])].map((warning) => {
-        const item = document.createElement('li');
+                if (link === null || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
+                    return;
+                }
 
-        item.textContent = warning;
+                event.preventDefault();
+                this.go(link.getAttribute('href'));
+            });
+            window.addEventListener('popstate', () => this.enter());
+            window.addEventListener('message', (event) => this.frameMessage(event));
+            this.loadHome();
+            this.listen();
+            this.enter();
+        },
 
-        return item;
+        get detectedClients() {
+            return (this.home?.clients ?? []).filter((client) => client.detected);
+        },
+
+        get otherClients() {
+            return (this.home?.clients ?? []).filter((client) => !client.detected);
+        },
+
+        get frameUrl() {
+            if (this.product === null || this.preview.scenario === null) {
+                return 'about:blank';
+            }
+
+            return `${productBase(this.product.path)}frame?${this.selectionQuery()}&v=${this.preview.revision}`;
+        },
+
+        get newProductValues() {
+            const type = this.home?.types.find((entry) => entry.value === this.newProduct.type);
+            const slug = slugify(this.newProduct.title);
+
+            return { title: this.newProduct.title.trim(), type: this.newProduct.type, slug, path: type && slug ? `${type.folder}/${slug}` : '' };
+        },
+
+        get aiStartPrompt() {
+            const template = this.home?.new_product?.ai_start;
+
+            return template ? fillPrompt(template, this.newProductValues) : '';
+        },
+
+        get newProductPrompt() {
+            const template = this.home?.new_product?.build;
+
+            if (!template || this.product === null) {
+                return '';
+            }
+
+            return fillPrompt(template, { title: this.product.title, path: this.product.path, slug: this.product.slug ?? this.product.path.split('/').pop(), type: this.product.type, version: this.product.version });
+        },
+
+        get screenshotGroups() {
+            const groups = new Map();
+
+            for (const shot of this.product?.result?.screenshots ?? []) {
+                const key = shot.scenario ?? 'Screenshots';
+
+                groups.set(key, [...(groups.get(key) ?? []), shot]);
+            }
+
+            return [...groups.entries()].map(([scenario, shots]) => ({ scenario, shots }));
+        },
+
+        go(href) {
+            history.pushState(null, '', href);
+            this.enter();
+            window.scrollTo(0, 0);
+        },
+
+        enter() {
+            this.route = parseRoute(location);
+            this.actionError = null;
+
+            const query = new URLSearchParams(location.search);
+
+            if (this.route.name === 'products') {
+                this.loadProducts();
+            }
+
+            if (this.route.name === 'new') {
+                this.newProduct = { title: '', type: query.get('type') ?? this.newProduct.type, creating: false, error: null };
+            }
+
+            if (this.route.name === 'product') {
+                this.created = query.has('created');
+                this.tab = this.tabs.some((item) => item.key === query.get('tab')) ? query.get('tab') : 'preview';
+                this.preview = { scenario: query.get('scenario'), playCount: Number.parseInt(query.get('play_count') ?? '', 10) || null, device: query.get('device') ?? 'desktop', revision: 0 };
+
+                if (this.product?.path !== this.route.path) {
+                    this.product = null;
+                    this.testLines = [];
+                }
+
+                this.loadProduct();
+            }
+        },
+
+        async getJson(url) {
+            const response = await fetch(url, { cache: 'no-store' });
+
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
+            this.offline = false;
+
+            return response.json();
+        },
+
+        async action(url, body = {}) {
+            const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Rafflex-Token': token }, body: JSON.stringify(body) });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(payload.error ?? 'That did not work. Try again.');
+            }
+
+            return payload;
+        },
+
+        async loadHome() {
+            try {
+                this.home = await this.getJson('/__rafflex/home');
+
+                if (!this.home.types.some((type) => type.value === this.newProduct.type)) {
+                    this.newProduct.type = this.home.types[0]?.value ?? 'game';
+                }
+            } catch {
+                this.offline = true;
+            }
+        },
+
+        async loadProducts() {
+            try {
+                this.products = (await this.getJson('/__rafflex/products')).products;
+            } catch {
+                this.offline = true;
+            }
+        },
+
+        async loadProduct() {
+            const path = this.route.path;
+
+            try {
+                const product = await this.getJson(`${productBase(path)}__rafflex/product`);
+
+                if (this.route.name !== 'product' || this.route.path !== path) {
+                    return;
+                }
+
+                const firstLoad = this.product === null;
+
+                this.product = product;
+                this.productError = null;
+
+                if (product.test.running && this.testLines.length === 0) {
+                    this.testLines = product.test.lines;
+                }
+
+                if (firstLoad) {
+                    const scenarios = product.scenarios.map((scenario) => scenario.value);
+                    const { min, max } = product.play_count;
+
+                    this.preview.scenario = scenarios.includes(this.preview.scenario) ? this.preview.scenario : scenarios[0] ?? null;
+                    this.preview.playCount = this.preview.playCount === null ? product.play_count.default : Math.min(max, Math.max(min, this.preview.playCount));
+                    this.loadPreviewProblems();
+                }
+            } catch (error) {
+                this.product = null;
+                this.productError = String(error.message || 'This product could not be found.');
+            }
+        },
+
+        selectionQuery() {
+            return new URLSearchParams({ scenario: this.preview.scenario ?? '', play_count: String(this.preview.playCount ?? '') }).toString();
+        },
+
+        rememberQuery() {
+            const query = new URLSearchParams({ tab: this.tab, scenario: this.preview.scenario ?? '', play_count: String(this.preview.playCount ?? ''), device: this.preview.device });
+
+            history.replaceState(null, '', `?${query}`);
+        },
+
+        setTab(key) {
+            this.tab = key;
+            this.rememberQuery();
+        },
+
+        previewChanged() {
+            const { min, max, default: fallback } = this.product.play_count;
+            const count = Number.parseInt(this.preview.playCount, 10);
+
+            this.preview.playCount = Number.isFinite(count) ? Math.min(max, Math.max(min, count)) : fallback;
+            this.rememberQuery();
+            this.reloadFrame();
+        },
+
+        reloadFrame() {
+            this.frameIssues = [];
+            this.preview.revision++;
+            this.loadPreviewProblems();
+        },
+
+        async loadPreviewProblems() {
+            if (this.product === null) {
+                return;
+            }
+
+            try {
+                const payload = await this.getJson(`${productBase(this.product.path)}__rafflex/problems?${this.selectionQuery()}`);
+
+                const warningCodes = payload.warning_codes ?? ['option_warning', 'unknown_file_tag'];
+
+                this.previewProblems = [...(payload.issues ?? []).filter((issue) => !warningCodes.includes(issue.code)), ...this.frameIssues];
+            } catch {
+                this.previewProblems = [...this.frameIssues];
+            }
+        },
+
+        frameMessage(event) {
+            const frame = document.querySelector('.frame iframe');
+
+            if (frame === null || event.source !== frame.contentWindow || typeof event.data !== 'object' || event.data === null) {
+                return;
+            }
+
+            if (event.data.type === 'rafflex-dev-violation') {
+                this.frameIssues.push({ code: 'safety', message: `The preview blocked a request (${event.data.directive}).`, fix: 'Use media only through the files map and keep code inline.' });
+            } else if (event.data.type === 'rafflex-dev-script-error') {
+                this.frameIssues.push({ code: 'script_error', message: `A script failed: ${event.data.message}`, fix: 'Ask your AI to fix it so it works in every scenario.' });
+            } else {
+                return;
+            }
+
+            this.previewProblems = [...this.previewProblems, this.frameIssues[this.frameIssues.length - 1]];
+        },
+
+        listen() {
+            const events = new EventSource('/__rafflex/events');
+
+            events.addEventListener('open', () => {
+                if (this.offline) {
+                    this.offline = false;
+                    this.loadHome();
+                    this.enter();
+                }
+            });
+            events.addEventListener('error', () => {
+                this.offline = events.readyState !== EventSource.OPEN;
+            });
+            events.addEventListener('products', () => this.refreshVisible(null));
+            events.addEventListener('change', (event) => this.refreshVisible(JSON.parse(event.data)));
+            events.addEventListener('test', (event) => this.testEvent(JSON.parse(event.data)));
+        },
+
+        refreshVisible(change) {
+            if (this.route.name === 'products') {
+                this.loadProducts();
+            }
+
+            if (this.route.name === 'product' && (change === null || change.path === this.route.path || change.type === 'all')) {
+                this.loadProduct();
+
+                if (change !== null && change.preview) {
+                    this.reloadFrame();
+                }
+            }
+        },
+
+        testEvent(event) {
+            if (this.route.name === 'products') {
+                this.loadProducts();
+            }
+
+            if (this.route.name !== 'product' || event.product !== this.route.path) {
+                return;
+            }
+
+            if (event.status === 'running') {
+                this.testLines = [...this.testLines, event.line];
+
+                if (this.product !== null) {
+                    this.product.test.running = true;
+                }
+
+                return;
+            }
+
+            this.loadProduct();
+        },
+
+        async startTest(product) {
+            this.actionError = null;
+
+            if (this.route.name === 'product') {
+                this.testLines = [];
+                this.rememberQuery();
+            }
+
+            try {
+                await this.action(`${productBase(product.path)}__rafflex/actions/test`);
+                product.test.running = true;
+            } catch (error) {
+                this.actionError = error.message;
+            }
+        },
+
+        async openFolder(product) {
+            this.actionError = null;
+
+            try {
+                const { opened } = await this.action(`${productBase(product.path)}__rafflex/actions/open-folder`);
+
+                if (!opened) {
+                    this.actionError = `Could not open the folder. It is at ${product.directory}`;
+                }
+            } catch (error) {
+                this.actionError = error.message;
+            }
+        },
+
+        async createProduct() {
+            this.newProduct.creating = true;
+            this.newProduct.error = null;
+
+            try {
+                const { url } = await this.action('/__rafflex/actions/new', { type: this.newProduct.type, title: this.newProduct.title });
+
+                this.go(`${url}?created=1`);
+            } catch (error) {
+                this.newProduct.error = error.message;
+            } finally {
+                this.newProduct.creating = false;
+            }
+        },
+
+        async copy(text, key) {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch {
+                const area = document.createElement('textarea');
+
+                area.value = text;
+                document.body.append(area);
+                area.select();
+                document.execCommand('copy');
+                area.remove();
+            }
+
+            this.copied = key;
+            setTimeout(() => {
+                if (this.copied === key) {
+                    this.copied = null;
+                }
+            }, 2000);
+        },
+
+        typeLabel(value) {
+            return this.home?.types.find((type) => type.value === value)?.label ?? value;
+        },
+
+        scenarioLabel(value) {
+            return this.product?.scenarios.find((scenario) => scenario.value === value)?.label ?? value;
+        },
+
+        issueWhere(issue) {
+            return [issue.file, issue.line ? `line ${issue.line}` : null, issue.scenario ? this.scenarioLabel(issue.scenario) : null].filter(Boolean).join(' · ');
+        },
+
+        resultUrl(path) {
+            return `${productBase(this.product.path)}results/${path.split('/').map(encodeURIComponent).join('/')}`;
+        },
+
+        timeAgo(at) {
+            const seconds = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 1000));
+
+            if (seconds < 60) {
+                return 'just now';
+            }
+
+            if (seconds < 3600) {
+                return `${Math.round(seconds / 60)} min ago`;
+            }
+
+            if (seconds < 86400) {
+                return `${Math.round(seconds / 3600)} h ago`;
+            }
+
+            return new Date(at).toLocaleDateString();
+        },
     }));
-
-    elements.list.replaceChildren(...issues.map((issue) => {
-        const item = document.createElement('li');
-        const meta = document.createElement('div');
-        const message = document.createElement('div');
-        const fix = document.createElement('div');
-        const where = [
-            issue.file ?? 'template.twig',
-            issue.line ? `line ${issue.line}` : null,
-            issue.scenarios.length > 0 ? issue.scenarios.map(scenarioLabel).join(', ') : null,
-        ].filter(Boolean).join(' · ');
-
-        item.className = nonBlockingCodes.includes(issue.code) ? 'report-only' : 'blocking';
-        meta.className = 'problem-meta';
-        meta.textContent = `${issue.code} · ${where}`;
-        message.textContent = issue.message;
-        fix.className = 'problem-fix';
-        fix.textContent = issue.fix ?? '';
-        item.append(meta, message);
-
-        if (issue.fix) {
-            item.append(fix);
-        }
-
-        return item;
-    }));
-
-    elements.note.textContent = state.note;
-
-    if (blocking.length > 0) {
-        elements.problems.dataset.state = 'error';
-        elements.summary.textContent = `${blocking.length} ${blocking.length === 1 ? 'problem' : 'problems'}${reportOnly > 0 ? `, ${reportOnly} to review` : ''}`;
-    } else if (reportOnly > 0 || state.warnings.length > 0 || state.error) {
-        elements.problems.dataset.state = 'warning';
-        elements.summary.textContent = reportOnly > 0 ? `${reportOnly} to review` : 'No problems found (see notes)';
-    } else {
-        elements.problems.dataset.state = 'ok';
-        elements.summary.textContent = 'No problems found locally';
-    }
-
-    if (blocking.length > 0 && elements.body.hidden && !state.userCollapsed) {
-        setExpanded(true);
-    }
-}
-
-function setExpanded(expanded) {
-    elements.body.hidden = !expanded;
-    elements.toggle.setAttribute('aria-expanded', String(expanded));
-}
-
-function applyDevice() {
-    elements.frameWrapper.dataset.device = state.device;
-
-    for (const button of elements.deviceButtons) {
-        button.setAttribute('aria-pressed', String(button.dataset.device === state.device));
-    }
-}
-
-window.addEventListener('message', (event) => {
-    if (event.source !== elements.frame.contentWindow || typeof event.data !== 'object' || event.data === null) {
-        return;
-    }
-
-    if (event.data.type === 'rafflex-dev-violation') {
-        let origin = event.data.blockedUri;
-
-        try {
-            origin = new URL(event.data.blockedUri).origin;
-        } catch {
-            // inline, eval, and data: reports carry no URL
-        }
-
-        state.frameIssues.push({
-            code: 'safety',
-            message: `The preview blocked a request to ${origin || 'an inline resource'} (${event.data.directive}).`,
-            fix: 'Reference media only through the files map and keep code inline. Every external domain is blocked on the platform too.',
-            scenario: state.config?.type === 'game' ? state.scenario : undefined,
-        });
-        renderProblems();
-
-        return;
-    }
-
-    if (event.data.type === 'rafflex-dev-script-error') {
-        state.frameIssues.push({
-            code: 'script_error',
-            message: `A script in the preview failed: ${event.data.message}${event.data.line ? ` (line ${event.data.line} of the rendered page)` : ''}.`,
-            fix: 'The platform does not check runtime errors; fix it so the game works in every scenario.',
-            scenario: state.config?.type === 'game' ? state.scenario : undefined,
-        });
-        renderProblems();
-    }
 });
-
-elements.toggle.addEventListener('click', () => {
-    const expanded = elements.body.hidden;
-
-    state.userCollapsed = !expanded;
-    setExpanded(expanded);
-});
-
-elements.scenario.addEventListener('change', () => {
-    state.scenario = elements.scenario.value;
-    refresh();
-});
-
-elements.playCount.addEventListener('change', () => {
-    const { min, max } = state.config.play_count;
-    const value = Number.parseInt(elements.playCount.value, 10);
-
-    state.playCount = Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : state.config.play_count.default;
-    elements.playCount.value = String(state.playCount);
-    refresh();
-});
-
-for (const button of elements.deviceButtons) {
-    button.addEventListener('click', () => {
-        state.device = button.dataset.device;
-        applyDevice();
-        remember();
-    });
-}
-
-async function start() {
-    const response = await fetch('__rafflex/config', { cache: 'no-store' });
-
-    if (!response.ok) {
-        elements.summary.textContent = await response.text();
-        elements.problems.dataset.state = 'error';
-
-        return;
-    }
-
-    state.config = await response.json();
-
-    const { scenarios, play_count: playCount, type } = state.config;
-
-    document.title = `${state.config.title} · Rafflex preview`;
-    elements.title.textContent = state.config.title;
-    elements.type.textContent = `${type} ${state.config.version}${state.config.offline ? ' · offline' : ''}`;
-    elements.scenario.replaceChildren(...scenarios.map((scenario) => new Option(scenario.label, scenario.value)));
-    state.scenario = scenarios.some((scenario) => scenario.value === state.scenario) ? state.scenario : scenarios[0]?.value;
-    elements.scenario.value = state.scenario;
-    state.playCount = Number.isFinite(state.playCount) ? Math.min(playCount.max, Math.max(playCount.min, state.playCount)) : playCount.default;
-    elements.playCount.min = String(playCount.min);
-    elements.playCount.max = String(playCount.max);
-    elements.playCount.value = String(state.playCount);
-
-    // A block renders the one block data contract; scenarios and play
-    // counts only change a game's data.
-    elements.scenarioControl.hidden = type !== 'game';
-    elements.playCountControl.hidden = type !== 'game';
-
-    applyDevice();
-    refresh();
-
-    const events = new EventSource('__rafflex/events');
-
-    events.addEventListener('reload', () => {
-        reloadFrame();
-        refreshProblems();
-    });
-}
-
-start();

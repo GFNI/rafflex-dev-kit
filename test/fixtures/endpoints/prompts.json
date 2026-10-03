@@ -1,0 +1,26 @@
+{
+    "version": "placeholder01",
+    "placeholders": ["title", "path", "slug", "type", "version", "live_version", "issues", "issue"],
+    "prompts": {
+        "get_started": {"title": "Get started", "description": "Your AI connects and sets up.", "text": "Set me up to build for the Rafflex marketplace. Follow __BASE_URL__/start.md step by step."},
+        "iterate": {"title": "Change something", "description": "Ask for a change.", "text": "Change {title} in {path}: [DESCRIBE THE CHANGE]."},
+        "fix": {"title": "Fix the issues", "description": "Fix what the test found.", "text": "Fix these issues in {title} ({path}):\n{issues}"},
+        "fix_issue": {"title": "Fix this", "description": "Fix one issue.", "text": "Fix this in {title} ({path}): {issue}"},
+        "next_version": {"title": "Next version", "description": "Start the next version.", "text": "Start the next version of {title}. Live is {live_version}."},
+        "revert": {"title": "Revert", "description": "Go back to an earlier version.", "text": "Revert {title} to an earlier version."},
+        "hand_to_ai": {"title": "Hand to AI", "description": "Pick it up.", "text": "Pick up {title} in {path}."},
+        "get_it_live_first": {"title": "Get it live", "description": "First push.", "text": "Run verify on {path}, push it as a new product, and submit {version} for review."},
+        "get_it_live": {"title": "Get it live", "description": "Push and submit.", "text": "Run verify on {slug}, push it, and submit {version} for review with the notes in CHANGELOG.md."},
+        "check_review": {"title": "Check the review", "description": "In review.", "text": "Check where the review of {title} {version} stands."},
+        "fix_review": {"title": "Fix the review", "description": "Changes requested.", "text": "Fix what the reviewer asked on {title} and submit {version} again."},
+        "new_product": {"title": "Build it", "description": "Describe it.", "text": "Build {title} in {path}: [DESCRIBE IT HERE]."},
+        "new_product_ai_start": {"title": "Let your AI start", "description": "Your AI runs new.", "text": "Run npx @rafflex/dev new {type} \"{title}\" and build it."}
+    },
+    "clients": [
+        {"key": "claude-code", "label": "Claude Code", "kind": "command", "connect": "claude mcp add --transport http --scope user rafflex __BASE_URL__/mcp"},
+        {"key": "codex", "label": "Codex", "kind": "command", "connect": "codex mcp add rafflex --url __BASE_URL__/mcp\ncodex mcp login rafflex"},
+        {"key": "cursor", "label": "Cursor", "kind": "link", "connect": "cursor://install"},
+        {"key": "vscode", "label": "VS Code", "kind": "link", "connect": "vscode:mcp/install"}
+    ],
+    "links": {"get_started": "__BASE_URL__/get-started", "web_chat": "__BASE_URL__/get-started", "dev_kit": "__BASE_URL__/docs/dev-kit.md"}
+}
