@@ -207,7 +207,7 @@ export function storedOverrides(overrides, template, contexts) {
 
 /**
  * @typedef {{key: string, message: string, refused: boolean}} OverrideProblem
- * @typedef {{max_label_length?: number, max_help_length?: number, max_choices?: number}} OverrideLimits
+ * @typedef {{max_label_length?: number, max_help_length?: number, max_choices?: number, violation_message?: string}} OverrideLimits
  */
 
 /**
@@ -324,10 +324,29 @@ export function overrideProblems(overrides, fields, rules) {
     }
 
     for (const message of bannedTextMessages(normaliseOverrides(overrides, fields), rules)) {
-        refuse('', `options.json: ${message}`);
+        refuse('', violationMessage(message, limits));
     }
 
     return problems;
+}
+
+/**
+ * A banned pattern's message as the platform reports it for option text
+ * (`option_overrides.violation_message` in rules.json, `:violation` being
+ * the pattern's message). Fallback only, for a marketplace that does not
+ * publish it yet: the published wording wins.
+ *
+ * @param {string} violation
+ * @param {{violation_message?: unknown}} limits
+ */
+function violationMessage(violation, limits) {
+    const published = limits.violation_message;
+
+    if (typeof published === 'string' && published.includes(':violation')) {
+        return published.replace(':violation', () => violation);
+    }
+
+    return `options.json: ${violation}`;
 }
 
 /**

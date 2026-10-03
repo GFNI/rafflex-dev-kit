@@ -10,10 +10,11 @@ import { tokenizeTemplate, TemplateTokenError } from './twig-tokens.js';
  * A template that reads competition data (`competitions`, `categories`, or
  * `products`) also gets the platform's Categories filter field.
  *
- * The conventions, the Categories field, and the inferrer's warnings are
- * read from contexts.json (`block.options_defaults`) when the platform
- * publishes them, and otherwise use the values below, which the recorded
- * parity fixtures hold to the platform's.
+ * The conventions, the Categories field and the variables that declare it,
+ * and the inferrer's warnings are the platform's, read from contexts.json
+ * (`block.options_defaults`). The published values always win; the copies
+ * below are only fallbacks for a marketplace that does not publish them
+ * yet, so inference keeps working against it.
  */
 
 /**
@@ -21,11 +22,16 @@ import { tokenizeTemplate, TemplateTokenError } from './twig-tokens.js';
  * @typedef {{fields: InferredField[], warnings: string[]}} OptionInference
  * @typedef {{names?: string[], prefixes?: string[], suffixes?: string[]}} Convention
  * @typedef {{order: string[], types: Record<string, Convention>}} Conventions
+ * @typedef {{label: string, help: string|null, variables: string[]}} CategoriesField
  */
 
 export const categoriesKey = 'categories';
 
-/** @type {Conventions} */
+/**
+ * Fallback only: the published `conventions` win.
+ *
+ * @type {Conventions}
+ */
 export const defaultConventions = {
     order: ['toggle', 'colour', 'image', 'url', 'textarea', 'number'],
     types: {
@@ -38,27 +44,56 @@ export const defaultConventions = {
     },
 };
 
+/**
+ * Fallback only: the published `categories_field` wins.
+ *
+ * @type {CategoriesField}
+ */
 export const defaultCategoriesField = {
     label: 'Categories',
     help: 'Show only competitions in these categories. Leave all unticked to show every competition.',
+    variables: ['competitions', 'categories', 'products'],
 };
 
+/**
+ * Fallback only: the published `warnings` win. `:key` names the option.
+ */
 export const defaultWarnings = {
     categories_read: 'options.categories is the platform\'s category filter, which narrows competitions and categories before the template renders. Read those lists instead of options.categories.',
     different_defaults: 'options.:key has different defaults in different places; the first one is used.',
 };
 
 const optionsVariable = 'options';
-const catalogueVariables = ['competitions', 'categories', 'products'];
 // The platform's key pattern allows one trailing newline: its `$` matches before it.
 const keyPattern = /^[a-zA-Z_][a-zA-Z0-9_]*\n?$/;
 
 /**
  * @typedef {object} InferenceRules
  * @property {Conventions} conventions
- * @property {{label: string, help: string}} categoriesField
+ * @property {CategoriesField} categoriesField
  * @property {{categories_read: string, different_defaults: string}} warnings
  */
+
+/**
+ * @param {unknown} list
+ * @returns {list is string[]}
+ */
+function isTextList(list) {
+    return Array.isArray(list) && list.every((entry) => typeof entry === 'string');
+}
+
+/**
+ * @param {any} conventions
+ * @returns {conventions is Conventions}
+ */
+function isConventions(conventions) {
+    if (!isTextList(conventions?.order) || conventions.types === null || typeof conventions.types !== 'object') {
+        return false;
+    }
+
+    return Object.values(conventions.types).every((convention) => convention !== null && typeof convention === 'object'
+        && ['names', 'prefixes', 'suffixes'].every((part) => convention[part] === undefined || isTextList(convention[part])));
+}
 
 /**
  * The inference rules from contexts.json's `block.options_defaults`, each
@@ -69,13 +104,24 @@ const keyPattern = /^[a-zA-Z_][a-zA-Z0-9_]*\n?$/;
  */
 export function inferenceRules(contexts) {
     const published = contexts?.block?.options_defaults ?? {};
-    const conventions = published.conventions;
-    const validConventions = Array.isArray(conventions?.order) && conventions.types !== null && typeof conventions?.types === 'object';
+    const categoriesField = published.categories_field ?? {};
+    /** @type {Record<string, string>} */
+    const warnings = {};
+
+    for (const [name, message] of Object.entries(published.warnings ?? {})) {
+        if (typeof message === 'string') {
+            warnings[name] = message;
+        }
+    }
 
     return {
-        conventions: validConventions ? conventions : defaultConventions,
-        categoriesField: typeof published.categories_field?.label === 'string' ? published.categories_field : defaultCategoriesField,
-        warnings: { ...defaultWarnings, ...(published.warnings ?? {}) },
+        conventions: isConventions(published.conventions) ? published.conventions : defaultConventions,
+        categoriesField: {
+            label: typeof categoriesField.label === 'string' ? categoriesField.label : defaultCategoriesField.label,
+            help: typeof categoriesField.help === 'string' || categoriesField.help === null ? categoriesField.help : defaultCategoriesField.help,
+            variables: isTextList(categoriesField.variables) ? categoriesField.variables : defaultCategoriesField.variables,
+        },
+        warnings: { ...defaultWarnings, ...warnings },
     };
 }
 
@@ -163,8 +209,9 @@ export function isDeclaredByTemplate(type) {
  * One pass over a template's tokens.
  *
  * @param {import('./twig-tokens.js').TemplateToken[]} tokens
+ * @param {string[]} catalogueVariables The variables whose read declares the Categories filter.
  */
-function scanTokens(tokens) {
+function scanTokens(tokens, catalogueVariables) {
     /** @type {Map<string, FoundField>} */
     const found = new Map();
     let readsCatalogue = false;
@@ -570,6 +617,8 @@ export function categoriesFilterField(rules) {
 export function inferOptions(template, contexts) {
     const rules = inferenceRules(contexts);
 
+    const catalogueVariables = rules.categoriesField.variables;
+
     if (![optionsVariable, ...catalogueVariables].some((variable) => template.includes(variable))) {
         return { fields: [], warnings: [] };
     }
@@ -586,7 +635,7 @@ export function inferOptions(template, contexts) {
         throw error;
     }
 
-    const { found, readsCatalogue } = scanTokens(tokens);
+    const { found, readsCatalogue } = scanTokens(tokens, catalogueVariables);
     /** @type {InferredField[]} */
     const fields = [];
     /** @type {string[]} */

@@ -56,18 +56,21 @@ export function optionWarningIssues(template, documents) {
 }
 
 /**
- * The option keys to compare with a live version's: flattened item keys
- * (`slides.title`) only when the live keys carry them.
+ * The option keys the platform's version bump compares, in the shape
+ * get_product publishes them (`versions[].option_keys`): every field's key,
+ * the Categories filter included, then `repeater.child` for each repeater
+ * item field.
  *
  * @param {InferredField[]} fields
- * @param {string[]} liveKeys
+ * @returns {string[]}
  */
-export function comparableKeys(fields, liveKeys) {
-    return liveKeys.some((key) => key.includes('.')) ? [...flattenedKeys(fields).keys()] : fields.map((field) => field.key);
+export function comparableKeys(fields) {
+    return [...flattenedKeys(fields).keys()];
 }
 
 /**
- * Options the live version reads that the local template no longer does.
+ * Options the live version reads that the local template no longer does,
+ * compared as the platform's version bump compares them.
  *
  * @param {InferredField[]} fields
  * @param {unknown} liveKeys
@@ -79,7 +82,7 @@ export function droppedOptionKeys(fields, liveKeys) {
     }
 
     const keys = liveKeys.filter((key) => typeof key === 'string');
-    const local = new Set(comparableKeys(fields, keys));
+    const local = new Set(comparableKeys(fields));
 
     return keys.filter((key) => !local.has(key));
 }

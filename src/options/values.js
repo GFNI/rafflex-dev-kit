@@ -8,14 +8,18 @@ import { isPlatformArray, isPlatformList, isScalar, platformBoolean, platformNum
  * an explicit boolean, its default when unset. The Categories filter never
  * reaches `options`; it narrows the competition data instead.
  *
- * The caps below are the platform's. `max_repeater_items` is published in
- * contexts.json; the text and query caps are not yet, so the kit holds
- * them and the recorded parity fixtures prove them.
+ * The caps are the platform's, read from contexts.json
+ * (`block.options_defaults`). The published values always win.
  */
 
+/**
+ * Fallbacks only, for a marketplace that does not publish a cap yet, so
+ * coercion keeps working against it: each published value wins.
+ */
 export const defaultLimits = {
     max_repeater_items: 20,
     max_query_bytes: 10000,
+    max_query_depth: 6,
     max_text_length: 500,
     max_long_text_length: 5000,
     toggle_unset: false,
@@ -87,9 +91,9 @@ export function valuesFromQuery(query, limits = defaultLimits) {
         return {};
     }
 
-    // The platform decodes at most 6 levels, the value inside the deepest
-    // array counting as one.
-    if (!isPlatformArray(decoded) || isPlatformList(decoded) || depthOf(decoded) > 5) {
+    // The platform decodes at most max_query_depth levels, the value inside
+    // the deepest array counting as one.
+    if (!isPlatformArray(decoded) || isPlatformList(decoded) || depthOf(decoded) >= limits.max_query_depth) {
         return {};
     }
 

@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { blockContext } from '../src/context.js';
-import { applyOverrides, inferOptions } from '../src/options/infer.js';
-import { tickedCategorySlugs, narrowCatalogue, resolveOptions, valuesFromQuery } from '../src/options/values.js';
+import { comparableKeys, droppedOptionKeys } from '../src/options/check.js';
+import { applyOverrides, defaultCategoriesField, defaultConventions, defaultWarnings, inferOptions } from '../src/options/infer.js';
+import { defaultLimits, tickedCategorySlugs, narrowCatalogue, resolveOptions, valueLimits, valuesFromQuery } from '../src/options/values.js';
+import { suggestVersion } from '../src/options/version-suggestion.js';
 import { fixtureDocuments } from './helpers/project.js';
 
 // The option fixture suite recorded from the platform: for each template,
@@ -100,9 +102,41 @@ describe('the options inferrer matches the platform', () => {
 describe('the options query parameter decodes as the platform decodes it', () => {
     for (const { query, values } of recorded.queries) {
         test(JSON.stringify(query), () => {
-            assert.deepEqual(asPlatformJson(valuesFromQuery(query)), asPlatformJson(values));
+            assert.deepEqual(asPlatformJson(valuesFromQuery(query, valueLimits(contexts))), asPlatformJson(values));
         });
     }
+});
+
+describe('the version suggestion matches the platform\'s', () => {
+    for (const pair of recorded.version_bumps) {
+        test(pair.name, () => {
+            const liveFields = applyOverrides(inferOptions(pair.live_template, contexts).fields, pair.live_overrides);
+            const draftFields = applyOverrides(inferOptions(pair.draft_template, contexts).fields, pair.draft_overrides);
+            const suggestion = suggestVersion({ liveVersion: pair.live_version, liveOptionKeys: pair.option_keys, fields: draftFields });
+            const expected = pair.suggested_version;
+
+            assert.deepEqual(comparableKeys(liveFields), pair.option_keys, 'the released version\'s keys, as get_product publishes them');
+            assert.deepEqual(suggestion === null ? null : { version: suggestion.version, bump: suggestion.bump }, expected === null ? null : { version: expected.version, bump: expected.bump });
+            assert.equal(droppedOptionKeys(draftFields, pair.option_keys).length > 0, expected?.bump === 'major');
+        });
+    }
+});
+
+describe('the kit\'s fallbacks are the values the platform publishes', () => {
+    const published = contexts.block.options_defaults;
+
+    test('naming conventions, in the order they are tried', () => {
+        const filled = Object.fromEntries(Object.entries(defaultConventions.types).map(([type, convention]) => [type, { names: [], prefixes: [], suffixes: [], ...convention }]));
+
+        assert.deepEqual(defaultConventions.order, published.conventions.order);
+        assert.deepEqual(filled, published.conventions.types);
+    });
+
+    test('value caps, the Categories field, and the warnings', () => {
+        assert.deepEqual(valueLimits(contexts), defaultLimits);
+        assert.deepEqual(defaultCategoriesField, published.categories_field);
+        assert.deepEqual(defaultWarnings, published.warnings);
+    });
 });
 
 describe('the suite covers what the port relies on', () => {
@@ -116,5 +150,8 @@ describe('the suite covers what the port relies on', () => {
         assert.ok(recorded.fixtures.some((fixture) => fixture.cases.length > 50), 'the coercion sweep');
         assert.ok(recorded.fixtures.some((fixture) => fixture.cases.some((recordedCase) => recordedCase.catalogue !== null)), 'a narrowed catalogue');
         assert.ok(recorded.fixtures.some((fixture) => fixture.fields.length === 0 && fixture.template.includes('options.')), 'a template that does not tokenize');
+        assert.deepEqual(new Set(recorded.version_bumps.map((/** @type {any} */ pair) => pair.suggested_version?.bump ?? null)), new Set(['major', 'minor', 'patch', null]), 'every bump');
+        assert.ok(recorded.version_bumps.some((/** @type {any} */ pair) => pair.option_keys.some((/** @type {string} */ key) => key.includes('.'))), 'repeater item keys');
+        assert.ok(recorded.version_bumps.some((/** @type {any} */ pair) => pair.option_keys.includes('categories')), 'the Categories filter');
     });
 });

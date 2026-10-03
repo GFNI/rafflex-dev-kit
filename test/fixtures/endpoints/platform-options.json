@@ -7726,5 +7726,223 @@
                 }
             ]
         }
+    ],
+    "version_bumps": [
+        {
+            "name": "same options, new markup",
+            "live_version": "1.2.0",
+            "live_template": "<h2>{{ options.heading|default('Win') }}</h2>",
+            "live_overrides": null,
+            "option_keys": [
+                "heading"
+            ],
+            "draft_template": "<section><h2 class=\"title\">{{ options.heading|default('Win big') }}</h2></section>",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "1.2.1",
+                "bump": "patch",
+                "reason": "This version has the same options as 1.2.0, so it is a patch release."
+            }
+        },
+        {
+            "name": "relabelled only",
+            "live_version": "1.2.0",
+            "live_template": "<h2>{{ options.heading }}</h2>",
+            "live_overrides": {
+                "heading": {
+                    "label": "Title",
+                    "help": "Shown at the top"
+                }
+            },
+            "option_keys": [
+                "heading"
+            ],
+            "draft_template": "<h2>{{ options.heading }}</h2>",
+            "draft_overrides": {
+                "heading": {
+                    "label": "Headline"
+                }
+            },
+            "suggested_version": {
+                "version": "1.2.1",
+                "bump": "patch",
+                "reason": "This version has the same options as 1.2.0, so it is a patch release."
+            }
+        },
+        {
+            "name": "an option added",
+            "live_version": "1.2.3",
+            "live_template": "<h2>{{ options.heading }}</h2>",
+            "live_overrides": null,
+            "option_keys": [
+                "heading"
+            ],
+            "draft_template": "<h2>{{ options.heading }}</h2><p>{{ options.intro }}</p>",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "1.3.0",
+                "bump": "minor",
+                "reason": "This version adds the Intro option, so it is a minor release."
+            }
+        },
+        {
+            "name": "an option removed",
+            "live_version": "1.2.3",
+            "live_template": "<h2>{{ options.heading }}</h2><p>{{ options.intro }}</p>",
+            "live_overrides": null,
+            "option_keys": [
+                "heading",
+                "intro"
+            ],
+            "draft_template": "<h2>{{ options.heading }}</h2>",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "2.0.0",
+                "bump": "major",
+                "reason": "This version removes the Intro option that sites on 1.2.3 may have set, so it is a major release."
+            }
+        },
+        {
+            "name": "an option renamed",
+            "live_version": "2.0.1",
+            "live_template": "{{ options.accent_colour|default('#fff') }}",
+            "live_overrides": null,
+            "option_keys": [
+                "accent_colour"
+            ],
+            "draft_template": "{{ options.accent_color|default('#fff') }}",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "3.0.0",
+                "bump": "major",
+                "reason": "This version removes the Accent colour option that sites on 2.0.1 may have set, so it is a major release."
+            }
+        },
+        {
+            "name": "a repeater item field added",
+            "live_version": "1.0.0",
+            "live_template": "{% for slide in options.slides %}{{ slide.title }}{% endfor %}",
+            "live_overrides": null,
+            "option_keys": [
+                "slides",
+                "slides.title"
+            ],
+            "draft_template": "{% for slide in options.slides %}{{ slide.title }}{{ slide.image }}{% endfor %}",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "1.1.0",
+                "bump": "minor",
+                "reason": "This version adds the Slides: Image option, so it is a minor release."
+            }
+        },
+        {
+            "name": "a repeater item field removed",
+            "live_version": "1.0.0",
+            "live_template": "{% for slide in options.slides %}{{ slide.title }}{{ slide.image }}{% endfor %}",
+            "live_overrides": null,
+            "option_keys": [
+                "slides",
+                "slides.title",
+                "slides.image"
+            ],
+            "draft_template": "{% for slide in options.slides %}{{ slide.title }}{% endfor %}",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "2.0.0",
+                "bump": "major",
+                "reason": "This version removes the Slides: Image option that sites on 1.0.0 may have set, so it is a major release."
+            }
+        },
+        {
+            "name": "item fields given to a repeater that had none",
+            "live_version": "1.4.0",
+            "live_template": "{% for slide in options.slides %}{{ loop.index }}{% endfor %}",
+            "live_overrides": null,
+            "option_keys": [
+                "slides"
+            ],
+            "draft_template": "{% for slide in options.slides %}{{ slide.title }}{% endfor %}",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "1.5.0",
+                "bump": "minor",
+                "reason": "This version adds the Slides: Title option, so it is a minor release."
+            }
+        },
+        {
+            "name": "item fields from default items",
+            "live_version": "1.0.0",
+            "live_template": "{% for prize in options.prizes|default([{name: 'Car'}]) %}{{ prize.name }}{% endfor %}",
+            "live_overrides": null,
+            "option_keys": [
+                "prizes",
+                "prizes.name"
+            ],
+            "draft_template": "{% for prize in options.prizes|default([{name: 'Car', value: 10}]) %}{{ prize.name }}{% endfor %}",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "1.1.0",
+                "bump": "minor",
+                "reason": "This version adds the Prizes: Value option, so it is a minor release."
+            }
+        },
+        {
+            "name": "competitions read for the first time",
+            "live_version": "3.1.4",
+            "live_template": "<h2>{{ options.heading }}</h2>",
+            "live_overrides": null,
+            "option_keys": [
+                "heading"
+            ],
+            "draft_template": "<h2>{{ options.heading }}</h2>{% for competition in competitions.all %}{{ competition.title }}{% endfor %}",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "3.2.0",
+                "bump": "minor",
+                "reason": "This version adds the Categories option, so it is a minor release."
+            }
+        },
+        {
+            "name": "competitions no longer read",
+            "live_version": "3.1.4",
+            "live_template": "{% for product in products %}{{ product.title }}{% endfor %}",
+            "live_overrides": null,
+            "option_keys": [
+                "categories"
+            ],
+            "draft_template": "<p>Coming soon</p>",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "4.0.0",
+                "bump": "major",
+                "reason": "This version removes the Categories option that sites on 3.1.4 may have set, so it is a major release."
+            }
+        },
+        {
+            "name": "no options either side",
+            "live_version": "0.9.9",
+            "live_template": "<p>Spin</p>",
+            "live_overrides": null,
+            "option_keys": [],
+            "draft_template": "<p>Spin again</p>",
+            "draft_overrides": null,
+            "suggested_version": {
+                "version": "0.9.10",
+                "bump": "patch",
+                "reason": "This version has the same options as 0.9.9, so it is a patch release."
+            }
+        },
+        {
+            "name": "live version not semantic",
+            "live_version": "1.2",
+            "live_template": "<h2>{{ options.heading }}</h2>",
+            "live_overrides": null,
+            "option_keys": [
+                "heading"
+            ],
+            "draft_template": "<h2>{{ options.heading }}</h2><p>{{ options.intro }}</p>",
+            "draft_overrides": null,
+            "suggested_version": null
+        }
     ]
 }

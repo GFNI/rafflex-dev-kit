@@ -4,11 +4,14 @@ import { flattenedKeys, inferOptions } from './infer.js';
 
 /**
  * The version the platform would suggest for the version in progress,
- * measured against the live version's options: major when an option the
- * live version reads is gone (sites may have set it), minor when options
- * are added, patch otherwise. Null when nothing is live, its version is
- * not major.minor.patch, or the marketplace did not send the live
- * version's option keys (`versions[].option_keys` in get_product).
+ * measured against the latest released version's options: major when an
+ * option the released version reads is gone (sites may have set it), minor
+ * when options are added, patch otherwise. Item fields of a repeater
+ * (`slides.title`) and the Categories filter count as options, exactly the
+ * keys the platform compares and publishes. Null when nothing is released,
+ * its version is not major.minor.patch, or the marketplace did not send
+ * the released version's option keys (`versions[].option_keys` in
+ * get_product).
  */
 
 /**
@@ -35,7 +38,7 @@ export function suggestVersion({ liveVersion, liveOptionKeys, fields }) {
     }
 
     const liveKeys = liveOptionKeys.filter((key) => typeof key === 'string');
-    const localKeys = comparableKeys(fields, liveKeys);
+    const localKeys = comparableKeys(fields);
     const labels = flattenedKeys(fields);
     const removed = liveKeys.filter((key) => !localKeys.includes(key));
     const added = localKeys.filter((key) => !liveKeys.includes(key));

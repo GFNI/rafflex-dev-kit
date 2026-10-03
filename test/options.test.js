@@ -9,7 +9,7 @@ import { optionIssues, sampleValueSets } from '../src/options/check.js';
 import { inferOptions } from '../src/options/infer.js';
 import { normaliseOverrides, overrideProblems } from '../src/options/overrides.js';
 import { tokenizeTemplate, TemplateTokenError } from '../src/options/twig-tokens.js';
-import { valueLimits } from '../src/options/values.js';
+import { resolveOptions, valueLimits, valuesFromQuery } from '../src/options/values.js';
 import { suggestVersion, versionSuggestionLines } from '../src/options/version-suggestion.js';
 import { launchChromium, loadPlaywright } from '../src/playwright.js';
 import { optionOverridesHash, readLocalState } from '../src/sync-state.js';
@@ -45,6 +45,44 @@ function get(url) {
         }).on('error', reject).end();
     });
 }
+
+describe('published option rules', () => {
+    const published = documents.contexts.block.options_defaults;
+    /**
+     * @param {Record<string, unknown>} changes
+     */
+    const contextsWith = (changes) => ({ ...documents.contexts, block: { ...documents.contexts.block, options_defaults: { ...published, ...changes } } });
+
+    test('the published conventions, Categories field, and warnings win over the kit\'s fallbacks', () => {
+        const contexts = contextsWith({
+            conventions: { order: ['textarea'], types: { textarea: { names: ['headline'], prefixes: [], suffixes: [] } } },
+            categories_field: { label: 'Filter', help: null, variables: ['raffles'] },
+            warnings: { ...published.warnings, different_defaults: 'Two defaults for :key.' },
+        });
+        const inferred = inferOptions('{{ options.headline|default("a") }}{{ options.headline|default("b") }}{{ options.show_title }}{{ raffles|length }}{{ competitions|length }}', contexts);
+
+        assert.deepEqual(inferred.fields.map((field) => [field.key, field.type, field.label]), [['headline', 'textarea', 'Headline'], ['show_title', 'text', 'Show title'], ['categories', 'categories', 'Filter']]);
+        assert.deepEqual(inferred.warnings, ['Two defaults for headline.']);
+        assert.deepEqual(inferOptions('{{ competitions|length }}', contexts).fields, []);
+    });
+
+    test('without published rules the kit\'s fallbacks apply', () => {
+        const inferred = inferOptions('{{ options.headline }}{{ options.show_title }}{{ competitions|length }}', { block: {} });
+
+        assert.deepEqual(inferred.fields.map((field) => [field.key, field.type]), [['headline', 'text'], ['show_title', 'toggle'], ['categories', 'categories']]);
+        assert.deepEqual(valueLimits({}), valueLimits(documents.contexts));
+    });
+
+    test('the published value caps win', () => {
+        const limits = valueLimits(contextsWith({ max_text_length: 3, max_long_text_length: 4, max_query_bytes: 20, max_query_depth: 2 }));
+        const fields = inferOptions('{{ options.heading }}{{ options.intro }}').fields;
+
+        assert.deepEqual(resolveOptions(fields, { heading: 'Hello', intro: 'Welcome' }, null, limits), { heading: 'Hel', intro: 'Welc' });
+        assert.deepEqual(valuesFromQuery('{"heading":"a long enough value"}', limits), {});
+        assert.deepEqual(valuesFromQuery('{"a":{"b":1}}', limits), {});
+        assert.deepEqual(valuesFromQuery('{"a":1}', limits), { a: 1 });
+    });
+});
 
 describe('the template tokenizer', () => {
     test('refuses what the platform refuses, so such a template declares no options', () => {
@@ -122,11 +160,22 @@ describe('options.json', () => {
     });
 
     test('override text passes the banned patterns, as the marketplace checks it', () => {
-        const problems = overrideProblems({ heading: { help: 'Visit javascript:alert(1)' } }, fields, rules);
+        const problems = overrideProblems({ heading: { help: 'Visit javascript:alert(1)' } }, fields, documents.rules);
 
         assert.equal(problems.length, 1);
         assert.equal(problems[0].refused, true);
-        assert.match(problems[0].message, /^options\.json: /);
+        assert.match(problems[0].message, /^In the option labels: /);
+    });
+
+    test('override text problems use the platform\'s wording when published, and the kit\'s otherwise', () => {
+        const unpublished = { ...documents.rules, option_overrides: { ...documents.rules.option_overrides, violation_message: undefined } };
+        const reworded = { ...documents.rules, option_overrides: { ...documents.rules.option_overrides, violation_message: 'Option text :violation (fix it)' } };
+        const overrides = { heading: { help: 'Visit javascript:alert(1)' } };
+        const [kitWording] = overrideProblems(overrides, fields, unpublished);
+        const [published] = overrideProblems(overrides, fields, reworded);
+
+        assert.match(kitWording.message, /^options\.json: /);
+        assert.equal(published.message, `Option text ${kitWording.message.slice('options.json: '.length)} (fix it)`);
     });
 
     test('limits are checked only when rules.json publishes them', () => {
@@ -206,11 +255,15 @@ describe('version suggestion', () => {
         assert.equal(suggestVersion({ liveVersion: 'beta', liveOptionKeys: [], fields }), null);
     });
 
-    test('item keys compare when the live keys carry them', () => {
+    test('repeater item fields and the Categories filter compare as the platform compares them', () => {
         const repeater = inferOptions('{% for slide in options.slides %}{{ slide.title }}{% endfor %}').fields;
+        const catalogue = inferOptions('{{ options.heading }}{{ competitions.all|length }}').fields;
 
         assert.equal(suggestVersion({ liveVersion: '1.0.0', liveOptionKeys: ['slides', 'slides.title', 'slides.image'], fields: repeater })?.bump, 'major');
-        assert.equal(suggestVersion({ liveVersion: '1.0.0', liveOptionKeys: ['slides'], fields: repeater })?.bump, 'patch');
+        assert.equal(suggestVersion({ liveVersion: '1.0.0', liveOptionKeys: ['slides', 'slides.title'], fields: repeater })?.bump, 'patch');
+        assert.deepEqual(suggestVersion({ liveVersion: '1.0.0', liveOptionKeys: ['slides'], fields: repeater }), { version: '1.1.0', bump: 'minor', reason: 'This version adds Slides: Title (options.slides.title), so it is a minor release.' });
+        assert.equal(suggestVersion({ liveVersion: '1.0.0', liveOptionKeys: ['heading'], fields: catalogue })?.bump, 'minor');
+        assert.equal(suggestVersion({ liveVersion: '1.0.0', liveOptionKeys: ['heading', 'categories'], fields: catalogue })?.bump, 'patch');
     });
 
     test('the plan warns when the version in progress is lower', () => {
