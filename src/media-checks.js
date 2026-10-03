@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { defaultTagFor, fileSize, filenameStem } from './assets.js';
 import { contentTypesFor, contentVerdict, contentVerdictMessage } from './file-content.js';
 import { fixFor } from './listing-checks.js';
+import { lockedAssetRefusals, lockedFix } from './push-plan.js';
 import { compareWithRemote, readLocalState } from './sync-state.js';
 
 /**
@@ -25,6 +26,11 @@ import { compareWithRemote, readLocalState } from './sync-state.js';
  *   .mp3). Another image type under an image extension is fine: the
  *   marketplace stores what the content is.
  *
+ * - `asset_locked`: a changed file whose marketplace copy a submitted or
+ *   published version uses, so the upload that would replace it is
+ *   refused and the template would ship without the new bytes (plan lists
+ *   it under `refusals` as well).
+ *
  * Every one blocks, because the marketplace refuses the upload. One
  * warning sits beside them: `asset_content_warning`, content the
  * marketplace accepts but stores as another kind than the name says
@@ -38,6 +44,7 @@ export const mediaFixes = {
     asset_duplicate: 'Give each file in assets/ its own name, and update files[...] in the template to the new tag.',
     asset_capacity: 'Remove files the template no longer uses from assets/, or save images and sounds smaller.',
     asset_content_mismatch: 'Export the file again in the format its name says.',
+    asset_locked: lockedFix,
     asset_content_warning: 'Rename the file to the extension its content has, or export it again in the format its name says.',
 };
 
@@ -112,7 +119,9 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
     const refusals = uploadRules.refusals ?? {};
     const issue = (/** @type {string} */ code, /** @type {string} */ message, /** @type {string} */ file) => ({ code, message, fix: fixFor(rules, code, mediaFixes[code]), file });
     const changes = compareWithRemote(local, product.manifest.remote);
-    const uploads = [...changes.assets.new, ...changes.assets.changed].filter((asset) => asset.library === null);
+    const locked = lockedAssetRefusals(changes, product.manifest.remote, rules);
+    const uploads = [...changes.assets.new, ...changes.assets.changed]
+        .filter((asset) => asset.library === null && !locked.some((refusal) => refusal.path === asset.path));
     const pattern = filenamePattern(uploadRules);
     const maxLength = typeof uploadRules.max_filename_length === 'number' ? uploadRules.max_filename_length : null;
     /** @type {Issue[]} */
@@ -133,6 +142,10 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
         const folder = asset.path.slice(0, asset.path.length - asset.filename.length);
 
         issues.push(issue('asset_filename', `${asset.path} cannot be uploaded under this name. ${reason} Rename it to ${folder}${suggestion}${defaultTagFor(suggestion) === defaultTagFor(asset.filename) ? ` (its tag stays ${asset.tag})` : ` and use files['${defaultTagFor(suggestion)}'] in the template`}.`, asset.path));
+    }
+
+    for (const refusal of locked) {
+        issues.push(issue('asset_locked', refusal.message, refusal.path));
     }
 
     issues.push(...duplicateIssues(local.assets, issue));

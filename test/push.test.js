@@ -292,7 +292,7 @@ describe('push', () => {
         assert.equal(productJson(root, path).remote.media.length, 12);
     });
 
-    test('a locked file is never sent, and the push says to save it under a new name', async () => {
+    test('a changed locked file blocks the push, which says to save it under a new name', async () => {
         const logo = png('logo');
         const { root, link, path, directory } = await syncedProduct('locked-logo', {
             media: [{ tag: 'logo', filename: 'logo.png', kind: 'image', mime_type: 'image/png', size_bytes: logo.length, sha256: sha256(logo), description: 'The logo', url: 'https://media.example/logo.png', library: null, locked: true }],
@@ -301,13 +301,14 @@ describe('push', () => {
         writeFileSync(join(directory, 'assets', 'logo.png'), png('a new logo'));
         writeFileSync(join(directory, 'template.twig'), '<p>{{ play_count }} logo</p>\n');
 
+        const before = marketplace.pushes().length;
         const { code, output } = await kit(['push', path, link], root);
-        const body = marketplace.pushes().at(-1)?.body;
 
-        assert.equal(code, 0, JSON.stringify(output));
-        assert.equal('uploads' in body, false);
-        assert.equal(output.refusals[0].code, 'asset_locked');
-        assert.match(output.notes.join('\n'), /Not pushed \[asset_locked\] assets\/logo\.png/);
+        assert.equal(code, 1, JSON.stringify(output));
+        assert.equal(marketplace.pushes().length, before);
+        assert.equal(output.error.code, 'not_ready');
+        assert.deepEqual(output.error.issues.map((/** @type {any} */ issue) => [issue.code, issue.file]), [['asset_locked', 'assets/logo.png']]);
+        assert.match(output.error.issues[0].message, /Save your change as assets\/logo-2\.png/);
     });
 
     test('refuses when the draft changed on the marketplace and the folder differs from it', async () => {

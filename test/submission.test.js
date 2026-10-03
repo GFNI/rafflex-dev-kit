@@ -222,6 +222,39 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.match((await run(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl })).stdout, /Not planned \[asset_locked\] assets\/wheel\.png/);
     });
 
+    test('a changed locked file blocks check, verify, and plan, so nothing reads as ready', async () => {
+        const text = listing(`category_ids: [${firstCategory.id}]`);
+        const root = temporaryWorkspace({
+            products: [{
+                title: 'Spin to Win',
+                slug: 'spin-to-win',
+                version: '1.1.0',
+                template,
+                listing: text,
+                assets: { 'wheel.png': png('new wheel'), 'star.png': png('star') },
+                remote: syncedRemote(text, {
+                    media: [
+                        { tag: 'wheel', filename: 'wheel.png', sha256: sha(png('old wheel')), kind: 'image', library: null, locked: true },
+                        { tag: 'star', filename: 'star.png', sha256: sha(png('star')), kind: 'image', library: null, locked: true },
+                    ],
+                }),
+            }],
+        });
+        const check = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const plan = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const locked = check.output.issues.filter((/** @type {any} */ issue) => issue.code === 'asset_locked');
+
+        assert.equal(check.code, 1);
+        assert.equal(check.output.passed, false);
+        assert.deepEqual(locked.map((/** @type {any} */ issue) => issue.file), ['assets/wheel.png']);
+        assert.match(locked[0].message, /cannot be overwritten\. Upload it under a new name\. Save your change as assets\/wheel-2\.png/);
+        assert.match(locked[0].fix, /new filename/);
+        assert.equal(plan.code, 1);
+        assert.equal(plan.output.ready, false);
+        assert.deepEqual(plan.output.verify.blocking_issues.map((/** @type {any} */ issue) => issue.code), ['asset_locked']);
+        assert.equal(plan.output.refusals[0].code, 'asset_locked');
+    });
+
     test('check blocks a listing the marketplace would refuse', async () => {
         const { limits } = rules.listing;
         const tags = Array.from({ length: limits.max_tags + 1 }, (_, index) => `"tag${index}"`).join(', ');
