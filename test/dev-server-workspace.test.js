@@ -196,7 +196,7 @@ describe('workspace index', () => {
         assert.equal(byPath['games/brand-new'].test.label, 'Not tested');
         assert.equal(byPath['games/brand-new'].test.running, false);
         assert.equal(byPath['games/brand-new'].directory, join(root, 'games', 'brand-new'));
-        assert.equal(byPath['games/brand-new'].hand_to_ai, 'Pick up Brand New in games/brand-new.');
+        assert.ok(byPath['games/brand-new'].hand_to_ai.startsWith('Pick up Brand New in games/brand-new. Run `npx @rafflex/dev status games/brand-new --json`'));
     });
 
     test('an empty workspace shows how to create a product', async () => {

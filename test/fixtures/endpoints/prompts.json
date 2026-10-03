@@ -1,26 +1,111 @@
 {
-    "version": "placeholder01",
-    "placeholders": ["title", "path", "slug", "type", "version", "live_version", "issues", "issue"],
+    "version": "214df3e2ae5c",
+    "placeholders": [
+        "title",
+        "path",
+        "slug",
+        "type",
+        "version",
+        "live_version",
+        "issues",
+        "issue"
+    ],
     "prompts": {
-        "get_started": {"title": "Get started", "description": "Your AI connects and sets up.", "text": "Set me up to build for the Rafflex marketplace. Follow __BASE_URL__/start.md step by step."},
-        "iterate": {"title": "Change something", "description": "Ask for a change.", "text": "Change {title} in {path}: [DESCRIBE THE CHANGE]."},
-        "fix": {"title": "Fix the issues", "description": "Fix what the test found.", "text": "Fix these issues in {title} ({path}):\n{issues}"},
-        "fix_issue": {"title": "Fix this", "description": "Fix one issue.", "text": "Fix this in {title} ({path}): {issue}"},
-        "next_version": {"title": "Next version", "description": "Start the next version.", "text": "Start the next version of {title}. Live is {live_version}."},
-        "revert": {"title": "Revert", "description": "Go back to an earlier version.", "text": "Revert {title} to an earlier version."},
-        "hand_to_ai": {"title": "Hand to AI", "description": "Pick it up.", "text": "Pick up {title} in {path}."},
-        "get_it_live_first": {"title": "Get it live", "description": "First push.", "text": "Run verify on {path}, push it as a new product, and submit {version} for review."},
-        "get_it_live": {"title": "Get it live", "description": "Push and submit.", "text": "Run verify on {slug}, push it, and submit {version} for review with the notes in CHANGELOG.md."},
-        "check_review": {"title": "Check the review", "description": "In review.", "text": "Check where the review of {title} {version} stands."},
-        "fix_review": {"title": "Fix the review", "description": "Changes requested.", "text": "Fix what the reviewer asked on {title} and submit {version} again."},
-        "new_product": {"title": "Build it", "description": "Describe it.", "text": "Build {title} in {path}: [DESCRIBE IT HERE]."},
-        "new_product_ai_start": {"title": "Let your AI start", "description": "Your AI runs new.", "text": "Run npx @rafflex/dev new {type} \"{title}\" and build it."}
+        "get_started": {
+            "title": "Get started",
+            "description": "Your AI connects to your Rafflex account and sets up, then builds with you while you watch here.",
+            "text": "Set me up to build for the Rafflex marketplace. Follow __BASE_URL__/start.md step by step, and ask me before anything that needs my approval."
+        },
+        "iterate": {
+            "title": "Change something",
+            "description": "Tell your AI what to change and it updates this product.",
+            "text": "Change {title} in {path}: [DESCRIBE THE CHANGE]. If that is still in brackets, ask me what to change first.\n\nFollow AGENTS.md. When you are done, run `npx @rafflex/dev verify {path}` and fix anything that blocks. Do not push it to the marketplace until I say so."
+        },
+        "fix": {
+            "title": "Fix the issues",
+            "description": "Your AI fixes everything the last test found.",
+            "text": "Fix these issues in {title} ({path}) from its last test:\n\n{issues}\n\nRun `npx @rafflex/dev verify {path}` after your fixes and keep going until nothing blocks. Do not push it to the marketplace until I say so."
+        },
+        "fix_issue": {
+            "title": "Fix this issue",
+            "description": "Your AI fixes this one issue.",
+            "text": "Fix this in {title} ({path}): {issue}\n\nThen run `npx @rafflex/dev verify {path}` and fix anything else that blocks. Do not push it to the marketplace until I say so."
+        },
+        "next_version": {
+            "title": "Start the next version",
+            "description": "Your AI asks what should change, then sets up the next version.",
+            "text": "Start the next version of {title} in {path}. The live version is {live_version}.\n\nAsk me what should change. Suggest the next version from that (a patch for fixes, a minor version for something new), then set it with `npx @rafflex/dev version {path} <x.y.z>`. Write the release notes under Unreleased in CHANGELOG.md, make the changes, and run `npx @rafflex/dev verify {path}` until nothing blocks. Do not push it to the marketplace until I say so."
+        },
+        "revert": {
+            "title": "Go back to an earlier version",
+            "description": "Your AI brings back a version you published before.",
+            "text": "Take {title} back to an earlier version I published on the marketplace. List its published versions and ask me which one I want.\n\nThen call `revert_to_version` with that version, call `export_product`, and bring the result into {path} with `npx @rafflex/dev import`. Run `npx @rafflex/dev verify {path}` and tell me what changed."
+        },
+        "hand_to_ai": {
+            "title": "Hand it to your AI",
+            "description": "Your AI picks up where this product stands.",
+            "text": "Pick up {title} in {path}. Run `npx @rafflex/dev status {path} --json` and tell me where it stands in two lines. Then ask me what to change."
+        },
+        "get_it_live_first": {
+            "title": "Get it live",
+            "description": "Your AI checks it, adds it to the marketplace, and sends it for review.",
+            "text": "Run `npx @rafflex/dev verify {path}` and fix anything that blocks. Then push {title} to the marketplace as a new product, and submit {version} for review with the notes in CHANGELOG.md."
+        },
+        "get_it_live": {
+            "title": "Get it live",
+            "description": "Your AI checks it, pushes the changes, and sends this version for review.",
+            "text": "Run `npx @rafflex/dev verify {path}` and fix anything that blocks. Then push {title}, and submit {version} for review with the notes in CHANGELOG.md."
+        },
+        "check_review": {
+            "title": "Check the review",
+            "description": "Your AI asks the marketplace where the review stands.",
+            "text": "Check where the review of {title} {version} stands. Call `get_product`, pipe the result into `npx @rafflex/dev synced {path}`, and tell me in one line."
+        },
+        "fix_review": {
+            "title": "Fix what the reviewer asked for",
+            "description": "Your AI makes every change the reviewer asked for.",
+            "text": "Read the reviewer's feedback on {title} with `get_product` and fix every point in {path}. Run `npx @rafflex/dev verify {path}` until nothing blocks, then push it. Submit {version} for review again only when I confirm."
+        },
+        "new_product": {
+            "title": "Build it with your AI",
+            "description": "Describe what you want and your AI builds it in this folder.",
+            "text": "Build {title} in {path}: [DESCRIBE IT HERE]. If that is still in brackets, ask me what it should do first.\n\nFollow AGENTS.md. Run `npx @rafflex/dev verify {path}` and fix anything that blocks. Do not push it to the marketplace until I say so."
+        },
+        "new_product_ai_start": {
+            "title": "Or ask your AI to start it",
+            "description": "Your AI creates the folder and asks you what it should do.",
+            "text": "Start a new {type} called {title}. Run `npx @rafflex/dev new {type} \"{title}\"`, then ask me what it should do and build it.\n\nFollow AGENTS.md. Run `npx @rafflex/dev verify` on the new folder and fix anything that blocks. Do not push it to the marketplace until I say so."
+        }
     },
     "clients": [
-        {"key": "claude-code", "label": "Claude Code", "kind": "command", "connect": "claude mcp add --transport http --scope user rafflex __BASE_URL__/mcp"},
-        {"key": "codex", "label": "Codex", "kind": "command", "connect": "codex mcp add rafflex --url __BASE_URL__/mcp\ncodex mcp login rafflex"},
-        {"key": "cursor", "label": "Cursor", "kind": "link", "connect": "cursor://install"},
-        {"key": "vscode", "label": "VS Code", "kind": "link", "connect": "vscode:mcp/install"}
+        {
+            "key": "claude-code",
+            "label": "Claude Code",
+            "kind": "command",
+            "connect": "claude mcp add --transport http --scope user rafflex __BASE_URL__/mcp"
+        },
+        {
+            "key": "codex",
+            "label": "Codex",
+            "kind": "command",
+            "connect": "codex mcp add rafflex --url __BASE_URL__/mcp\ncodex mcp login rafflex"
+        },
+        {
+            "key": "cursor",
+            "label": "Cursor",
+            "kind": "link",
+            "connect": "cursor://anysphere.cursor-deeplink/mcp/install?name=rafflex&config=eyJ1cmwiOiJodHRwczovL21hcmtldHBsYWNlLnJhZmZsZXguaW8udGVzdC9tY3AifQ=="
+        },
+        {
+            "key": "vscode",
+            "label": "VS Code",
+            "kind": "link",
+            "connect": "vscode:mcp/install?%7B%22name%22%3A%22rafflex%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmarketplace.rafflex.io.test%2Fmcp%22%7D"
+        }
     ],
-    "links": {"get_started": "__BASE_URL__/get-started", "web_chat": "__BASE_URL__/get-started", "dev_kit": "__BASE_URL__/docs/dev-kit.md"}
+    "links": {
+        "get_started": "__BASE_URL__/get-started",
+        "web_chat": "__BASE_URL__/get-started",
+        "dev_kit": "__BASE_URL__/docs/dev-kit.md"
+    }
 }

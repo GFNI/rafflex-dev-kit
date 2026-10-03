@@ -7,11 +7,13 @@ import { startDevServer, tokenHeader } from '../src/dev-server.js';
 import { listingHash, optionOverridesHash, templateHash } from '../src/sync-state.js';
 import { loadWorkspace } from '../src/workspace.js';
 import { startFixtureServer } from './helpers/fixture-server.js';
-import { addProduct, fixtureDocuments, stubPrompts, temporaryDirectory, temporaryWorkspace } from './helpers/project.js';
+import { fillPrompt } from '../src/app/prompts.js';
+import { addProduct, fixtureDocuments, fixturePrompts, stubPrompts, temporaryDirectory, temporaryWorkspace } from './helpers/project.js';
 
 const documents = fixtureDocuments();
 const loaded = { documents, warnings: [], offline: false, baseUrl: 'https://marketplace.rafflex.io', manifest: null, cacheDirectory: '' };
 const template = '<p>{{ play_count }}</p>\n';
+const prompts = fixturePrompts().prompts;
 
 /**
  * @param {string} url
@@ -261,7 +263,8 @@ describe('the app on localhost', () => {
 
         assert.equal(brandNew.publish.state.label, 'Not pushed yet');
         assert.equal(brandNew.publish.prompt.key, 'get_it_live_first');
-        assert.equal(brandNew.publish.prompt.text, 'Run verify on games/brand-new, push it as a new product, and submit 1.0.0 for review.');
+        assert.equal(brandNew.publish.prompt.text, fillPrompt(prompts.get_it_live_first.text, { title: 'Brand New', path: 'games/brand-new', version: '1.0.0' }));
+        assert.ok(brandNew.publish.prompt.text.includes('submit 1.0.0 for review'));
         assert.equal(brandNew.publish.disabled, false);
         assert.equal(inReview.publish.state.label, 'In review');
         assert.equal(inReview.publish.prompt.key, 'check_review');
@@ -270,7 +273,8 @@ describe('the app on localhost', () => {
         assert.equal(live.publish.state.label, 'Live 1.0.0');
         assert.equal(live.publish.prompt.key, 'next_version');
         assert.equal(ready.publish.prompt.key, 'get_it_live');
-        assert.equal(ready.publish.prompt.text, 'Run verify on ready-one, push it, and submit 1.1.0 for review with the notes in CHANGELOG.md.');
+        assert.equal(ready.publish.prompt.text, fillPrompt(prompts.get_it_live.text, { title: 'Ready One', path: 'games/ready-one', slug: 'ready-one', version: '1.1.0' }));
+        assert.ok(ready.publish.prompt.text.includes('submit 1.1.0 for review with the notes in CHANGELOG.md'));
     });
 
     test('the product view carries its prompts filled in, the changelog, and the preview controls', async () => {
@@ -278,9 +282,9 @@ describe('the app on localhost', () => {
         const live = (await send(`${server.url}p/games/live-one/__rafflex/product`)).json();
 
         assert.deepEqual(brandNew.prompts.list.map((/** @type {any} */ prompt) => prompt.key), ['iterate', 'hand_to_ai']);
-        assert.equal(brandNew.prompts.list[0].text, 'Change Brand New in games/brand-new: [DESCRIBE THE CHANGE].');
+        assert.ok(brandNew.prompts.list[0].text.startsWith('Change Brand New in games/brand-new: [DESCRIBE THE CHANGE].'));
         assert.deepEqual(live.prompts.list.map((/** @type {any} */ prompt) => prompt.key), ['iterate', 'next_version', 'revert', 'hand_to_ai']);
-        assert.equal(live.prompts.list[1].text, 'Start the next version of Live One. Live is 1.0.0.');
+        assert.ok(live.prompts.list[1].text.startsWith('Start the next version of Live One in games/live-one. The live version is 1.0.0.'));
         assert.equal(brandNew.changelog, 'Added a spinning wheel.');
         assert.equal(brandNew.test.label, 'Not tested');
         assert.equal(brandNew.result, null);
@@ -325,7 +329,7 @@ describe('the app on localhost', () => {
         assert.equal(detail.publish.disabled, true);
         assert.equal(detail.publish.next, 'Fix these first, or ask your AI to.');
         assert.equal(detail.publish.prompt.key, 'fix');
-        assert.ok(detail.publish.prompt.text.startsWith('Fix these issues in Brand New (games/brand-new):\n- '));
+        assert.ok(detail.publish.prompt.text.startsWith('Fix these issues in Brand New (games/brand-new) from its last test:\n\n- '));
         assert.equal(detail.prompts.fix_issue.length, detail.result.blocking.length);
         assert.ok(detail.prompts.fix_issue[0].startsWith(`Fix this in Brand New (games/brand-new): ${detail.result.blocking[0].message}`));
         assert.deepEqual(detail.prompts.list.map((/** @type {any} */ prompt) => prompt.key), ['iterate', 'fix', 'hand_to_ai']);

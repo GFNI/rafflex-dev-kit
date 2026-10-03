@@ -35,7 +35,7 @@ export const devKitCommands = [
     {
         name: 'dev',
         usage: 'npx @rafflex/dev',
-        summary: 'Preview the products in this workspace with live reload.',
+        summary: 'Start the Rafflex app on this workspace (outside one, set one up in a new rafflex folder first).',
         json: true,
         positionals: { min: 0, max: 1 },
     },
