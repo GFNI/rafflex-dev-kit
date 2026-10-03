@@ -391,12 +391,53 @@ export function sortedJson(value) {
     });
 }
 
+/** Letters the platform spells out in ASCII that Unicode does not decompose. */
+const asciiLetters = /** @type {Record<string, string>} */ ({ ß: 'ss', æ: 'ae', Æ: 'AE', ø: 'o', Ø: 'O', œ: 'oe', Œ: 'OE', đ: 'd', Đ: 'D', ł: 'l', Ł: 'L', þ: 'th', Þ: 'TH', ð: 'd', Ð: 'D' });
+
+/**
+ * A tag name as the platform keys it: tags are matched by this slug, so
+ * "Wheel", "wheel" and "WHEEL " are one tag, stored under the spelling it
+ * was first created with. Letters are spelled in ASCII, underscores and
+ * whitespace become single hyphens, `@` becomes "at", and anything that is
+ * not a letter, number, or hyphen is dropped.
+ *
+ * @param {string} name
+ */
+export function tagSlug(name) {
+    return name
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[ßæÆøØœŒđĐłŁþÞðÐ]/g, (letter) => asciiLetters[letter])
+        .replace(/_+/g, '-')
+        .replaceAll('@', '-at-')
+        .toLowerCase()
+        .replace(/[^-\p{L}\p{N}\s]+/gu, '')
+        .replace(/[-\s]+/gu, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * The tags a listing ends up with on the platform, as slugs: each name
+ * trimmed, empty names (and "0") dropped, then de-duplicated by slug. The
+ * platform keeps no order for tags, so the result is sorted.
+ *
+ * @param {unknown[]} names
+ * @returns {string[]}
+ */
+export function canonicalTagSlugs(names) {
+    const kept = names.map((name) => String(name).trim()).filter((name) => name !== '' && name !== '0');
+
+    return [...new Set(kept.map(tagSlug))].sort();
+}
+
 /**
  * The canonical listing used for hashing: sorted key JSON of the six
- * fields, with category ids and tag names sorted, missing values empty,
- * and the three long text fields trimmed. Trimming both sides keeps the
- * hash of a parsed listing.md equal to the hash of the server's fields,
- * whatever blank lines surround a body.
+ * fields, with category ids de-duplicated and sorted, tags compared as the
+ * platform matches them (canonicalTagSlugs, so a tag the platform answers
+ * with another spelling is the same tag), missing values empty, and the
+ * three long text fields trimmed. Trimming both sides keeps the hash of a
+ * parsed listing.md equal to the hash of the server's fields, whatever
+ * blank lines surround a body.
  *
  * @param {Partial<ListingFields>|null|undefined} listing
  * @returns {string}
@@ -405,11 +446,11 @@ export function canonicalListing(listing) {
     const fields = { ...emptyListing(), ...(listing ?? {}) };
 
     return sortedJson({
-        category_ids: [...(fields.category_ids ?? [])].map(Number).sort((first, second) => first - second),
+        category_ids: [...new Set((fields.category_ids ?? []).map(Number))].sort((first, second) => first - second),
         description: String(fields.description ?? '').trim(),
         documentation: String(fields.documentation ?? '').trim(),
         install_notes: String(fields.install_notes ?? '').trim(),
-        tag_names: [...(fields.tag_names ?? [])].map(String).sort(),
+        tag_names: canonicalTagSlugs(fields.tag_names ?? []),
         video_url: fields.video_url ?? '',
     });
 }

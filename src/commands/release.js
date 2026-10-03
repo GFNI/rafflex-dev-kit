@@ -3,7 +3,7 @@ import { commitProduct } from '../git.js';
 import { payloadMismatch, recordProductState } from '../record-sync.js';
 import { productAndLink, SyncLinkError } from '../sync-link.js';
 import { changelogFilename, loadWorkspace, selectProduct, writeProductJson } from '../workspace.js';
-import { fail, messageOf, writeJson } from './output.js';
+import { failWithCode, messageOf, writeJson } from './output.js';
 import { failWithLinkError, readLinkState } from './synced.js';
 
 /**
@@ -140,16 +140,37 @@ export function localDate(now = new Date()) {
 }
 
 /**
+ * Whether the marketplace has `version` in review (a submitted draft of
+ * that version) or already released, as a get_product payload says.
+ *
+ * @param {Record<string, any>} payload
+ * @param {string} version
+ * @returns {'in_review'|'released'|null}
+ */
+export function submittedState(payload, version) {
+    if (payload.draft?.submitted === true && payload.draft?.version === version) {
+        return 'in_review';
+    }
+
+    const released = Array.isArray(payload.versions) ? payload.versions : [];
+
+    return released.some((/** @type {any} */ entry) => entry?.version === version) ? 'released' : null;
+}
+
+/**
  * `release <product> [<sync_url>]`: run after submit_for_review succeeds.
  * Closes the Unreleased changelog section under the version being worked
  * on, marks the draft as submitted in the recorded remote state (so the
  * app shows In review without another sync), and with git commits the
  * product folder as "Release <slug> <version>" and tags `<slug>@<version>`
- * (an existing tag is reported, never moved). With a sync link it records
- * the marketplace's fresh state and feedback instead of marking it.
- * Refused when Unreleased is empty.
+ * (an existing tag is reported, never moved). With a sync link it first
+ * reads the marketplace: unless that version is in review (or already
+ * released) it changes nothing and exits 1 (`not_submitted`), so the AI
+ * calls submit_for_review first; otherwise it records the fresh state and
+ * feedback instead of marking it. Refused when Unreleased is empty.
  *
- * JSON: `{product, slug, version, heading, merged, notes, in_review, git: {repository, committed, commit, tag, tag_created, tag_existed, error}}`.
+ * JSON: `{product, slug, version, heading, merged, notes, in_review, git: {repository, committed, commit, tag, tag_created, tag_existed, error}}`;
+ * a refusal is `{error: {code, message}}`.
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -164,7 +185,7 @@ export async function runReleaseCommand(context) {
         workspace = loadWorkspace(cwd);
         product = selectProduct(workspace, productName, cwd);
     } catch (error) {
-        return fail(context, messageOf(error), 2);
+        return failWithCode(context, { code: 'cannot_run', message: messageOf(error) }, 2);
     }
 
     /** @type {{payload: Record<string, any>, feedback: unknown}|null} */
@@ -175,7 +196,7 @@ export async function runReleaseCommand(context) {
             const state = await readLinkState(workspace, link);
 
             if (state.payload === null) {
-                return fail(context, `That link is for a product not on the marketplace yet. Push ${product.path} first with npx @rafflex/dev push.`, 1, { code: 'not_created' });
+                return failWithCode(context, { code: 'not_created', message: `That link is for a product not on the marketplace yet. Push ${product.path} first with npx @rafflex/dev push.` }, 1);
             }
 
             fresh = { payload: state.payload, feedback: state.feedback };
@@ -190,12 +211,25 @@ export async function runReleaseCommand(context) {
         const mismatch = payloadMismatch(product, fresh.payload, 'That link');
 
         if (mismatch !== null) {
-            return fail(context, mismatch.message, mismatch.exitCode);
+            return failWithCode(context, { code: mismatch.exitCode === 2 ? 'unexpected_response' : 'wrong_link', message: mismatch.message }, mismatch.exitCode);
+        }
+
+        if (submittedState(fresh.payload, product.version) === null) {
+            const slug = fresh.payload.slug;
+            const draft = fresh.payload.draft;
+            const has = draft === null || draft === undefined
+                ? 'no draft'
+                : (draft.submitted === true ? `${draft.version} in review` : `${draft.version} as a draft not yet submitted`);
+
+            return failWithCode(context, {
+                code: 'not_submitted',
+                message: `The marketplace has ${has}, so ${product.version} of ${slug} is not in review and nothing changed (no changelog edit, commit, or tag). When the creator says go, call submit_for_review for ${slug}, then run npx @rafflex/dev release ${slug} "<sync_url>" with a new link.`,
+            }, 1);
         }
     }
 
     if (!existsSync(product.changelogPath)) {
-        return fail(context, `${product.path}/${changelogFilename} is missing. Create it with "# Changelog" and a "## Unreleased" section holding the release notes.`, 1);
+        return failWithCode(context, { code: 'no_changelog', message: `${product.path}/${changelogFilename} is missing. Create it with "# Changelog" and a "## Unreleased" section holding the release notes.` }, 1);
     }
 
     let closed;
@@ -203,7 +237,7 @@ export async function runReleaseCommand(context) {
     try {
         closed = closeUnreleased(readFileSync(product.changelogPath, 'utf8'), product.version, localDate());
     } catch (error) {
-        return fail(context, `${product.path}: ${messageOf(error)}`, 1);
+        return failWithCode(context, { code: 'no_notes', message: `${product.path}: ${messageOf(error)}` }, 1);
     }
 
     const temporary = `${product.changelogPath}.${process.pid}.tmp`;
@@ -214,11 +248,11 @@ export async function runReleaseCommand(context) {
     /** @type {string[]} */
     const notes = [];
     const marked = markInReview(workspace, product, fresh, notes);
-    const name = product.slug ?? product.folder;
-    const tag = product.slug === null ? null : `${product.slug}@${product.version}`;
+    const name = marked.slug ?? product.folder;
+    const tag = marked.slug === null ? null : `${marked.slug}@${product.version}`;
     const git = commitProduct(workspace.root, marked.directory, `Release ${name} ${product.version}`, tag);
 
-    if (product.slug === null) {
+    if (marked.slug === null) {
         notes.push('No tag: this product has no slug yet. Push it with request_sync and npx @rafflex/dev push first.');
     }
 
@@ -231,12 +265,12 @@ export async function runReleaseCommand(context) {
     }
 
     if (options.json) {
-        writeJson(stdout, { product: product.path, slug: product.slug, version: product.version, heading: closed.heading, merged: closed.merged, notes: closed.notes, in_review: marked.in_review, git });
+        writeJson(stdout, { product: marked.path, slug: marked.slug, version: product.version, heading: closed.heading, merged: closed.merged, notes: closed.notes, in_review: marked.in_review, git });
 
         return 0;
     }
 
-    const lines = [`${product.path}: ${closed.merged ? 'added the Unreleased notes to' : 'moved the Unreleased notes under'} "## ${closed.heading}" and started a fresh Unreleased section.`];
+    const lines = [`${marked.path}: ${closed.merged ? 'added the Unreleased notes to' : 'moved the Unreleased notes under'} "## ${closed.heading}" and started a fresh Unreleased section.`];
 
     if (git.committed) {
         lines.push(`Committed "Release ${name} ${product.version}"${git.tag_created ? ` and tagged ${tag}` : ''}.`);
@@ -267,7 +301,7 @@ export async function runReleaseCommand(context) {
  * @param {import('../workspace.js').Product} product
  * @param {{payload: Record<string, any>, feedback: unknown}|null} fresh
  * @param {string[]} notes
- * @returns {{directory: string|string[], in_review: boolean}}
+ * @returns {{directory: string|string[], path: string, slug: string|null, in_review: boolean}}
  */
 function markInReview(workspace, product, fresh, notes) {
     if (fresh !== null) {
@@ -277,10 +311,10 @@ function markInReview(workspace, product, fresh, notes) {
         notes.push(...recorded.notes);
 
         if (!inReview) {
-            notes.push(`The marketplace does not show ${product.version} in review. Submit it with submit_for_review, then run release again with a new link.`);
+            notes.push(`${product.version} is already released on the marketplace.`);
         }
 
-        return { directory: recorded.renamed ? [product.directory, recorded.directory] : recorded.directory, in_review: inReview };
+        return { directory: recorded.renamed ? [product.directory, recorded.directory] : recorded.directory, path: recorded.path, slug: recorded.slug, in_review: inReview };
     }
 
     const remote = product.manifest.remote;
@@ -288,10 +322,10 @@ function markInReview(workspace, product, fresh, notes) {
     if (remote === null || remote.draft === null || remote.draft === undefined) {
         notes.push(`No draft is recorded for ${product.path}, so it is not marked in review. Record it with npx @rafflex/dev synced ${product.slug ?? product.path} "<sync_url>".`);
 
-        return { directory: product.directory, in_review: false };
+        return { directory: product.directory, path: product.path, slug: product.slug, in_review: false };
     }
 
     writeProductJson(product.directory, { ...product.manifest, remote: { ...remote, draft: { ...remote.draft, submitted: true } } });
 
-    return { directory: product.directory, in_review: true };
+    return { directory: product.directory, path: product.path, slug: product.slug, in_review: true };
 }

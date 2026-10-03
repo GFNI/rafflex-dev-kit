@@ -6,7 +6,7 @@ import { runFormatCommand } from './commands/format.js';
 import { runInitCommand } from './commands/init.js';
 import { runImportCommand } from './commands/import.js';
 import { runNewCommand } from './commands/new.js';
-import { fail } from './commands/output.js';
+import { fail, writeJson } from './commands/output.js';
 import { runPlanCommand } from './commands/plan.js';
 import { runPushCommand } from './commands/push.js';
 import { runReleaseCommand } from './commands/release.js';
@@ -272,7 +272,14 @@ export async function main(argv, io = {}) {
     try {
         options = parseArguments(argv);
     } catch (error) {
-        stderr.write(`${/** @type {Error} */ (error).message}\n\n${usage}\n`);
+        const message = /** @type {Error} */ (error).message;
+        const separator = argv.indexOf('--');
+
+        if ((separator === -1 ? argv : argv.slice(0, separator)).includes('--json')) {
+            writeJson(stdout, { error: { code: 'usage', message: `${message} Run npx @rafflex/dev --help for every command.` } });
+        } else {
+            stderr.write(`${message}\n\n${usage}\n`);
+        }
 
         return 2;
     }

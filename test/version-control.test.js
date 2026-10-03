@@ -149,7 +149,7 @@ describe('version control', () => {
 
         assert.equal(code, 1);
         assert.equal(output.restored, false);
-        assert.match(output.export_fallback, /export_product, then run npx @rafflex\/dev import <bundle_url> --force/);
+        assert.match(output.export_fallback, /export_product, then run npx @rafflex\/dev import "<bundle_url>" --force/);
         assert.match((await run(['restore', 'spin-to-win', 'earlier'], { cwd: root })).stderr, /use revert_to_version on the marketplace/);
     });
 

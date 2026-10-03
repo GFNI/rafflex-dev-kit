@@ -8,6 +8,8 @@ import { listingDirectoryName, remoteListingImagesFrom, screenshotsDirectoryName
 import { formatListing } from '../listing.js';
 import { planListingImagesFor } from '../push-plan.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
+import { confinedWritePath, isPlainFilename, isSlug, resolvesInside } from '../safe-paths.js';
+import { recordSyncTime } from '../sync-times.js';
 import { bumpVersion, isVersion } from '../semver.js';
 import { compareWithRemote, latestReleasedVersion, readLocalState, remoteFromProduct, sha256 } from '../sync-state.js';
 import {
@@ -28,7 +30,12 @@ import { fail, messageOf, writeJson } from './output.js';
 /** The export bundle format this kit reads. */
 export const BundleFormat = 1;
 
-const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** How long the bundle download may take, like a sync link request. */
+export const bundleTimeoutMs = 30000;
+
+/** How long each media file or listing image download may take, like an upload. */
+export const mediaTimeoutMs = 120000;
+
 const bundleFiles = [templateFilename, optionsFilename, listingFilename, changelogFilename];
 
 export class ImportError extends Error {}
@@ -52,23 +59,7 @@ async function readBundleText(source, cwd, stdin) {
     }
 
     if (/^https?:\/\//i.test(source)) {
-        let response;
-
-        try {
-            response = await fetch(source, { headers: { Accept: 'application/json' } });
-        } catch (error) {
-            throw new ImportError(`Could not download the bundle: ${messageOf(/** @type {any} */ (error)?.cause ?? error)}.`);
-        }
-
-        if (response.status === 403 || response.status === 401) {
-            throw new ImportError('The bundle link was refused (it is valid for 10 minutes). Call export_product again for a fresh link.');
-        }
-
-        if (!response.ok) {
-            throw new ImportError(`Could not download the bundle: the marketplace answered ${response.status}.`);
-        }
-
-        return response.text();
+        return fetchBundleText(source);
     }
 
     const path = resolve(cwd, source);
@@ -78,6 +69,90 @@ async function readBundleText(source, cwd, stdin) {
     }
 
     return readFileSync(path, 'utf8');
+}
+
+/**
+ * Download a bundle from its URL (export_product's signed link), giving
+ * up after `timeoutMs`.
+ *
+ * @param {string} url
+ * @param {number} [timeoutMs]
+ * @returns {Promise<string>}
+ */
+export async function fetchBundleText(url, timeoutMs = bundleTimeoutMs) {
+    let response;
+
+    try {
+        response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+        throw new ImportError(`Could not download the bundle: ${downloadFailure(error, timeoutMs)}.`);
+    }
+
+    if (response.status === 403 || response.status === 401) {
+        throw new ImportError('The bundle link was refused (it is valid for 10 minutes). Call export_product again for a fresh link.');
+    }
+
+    if (!response.ok) {
+        throw new ImportError(`Could not download the bundle: the marketplace answered ${response.status}.`);
+    }
+
+    try {
+        return await response.text();
+    } catch (error) {
+        throw new ImportError(`Could not download the bundle: ${downloadFailure(error, timeoutMs)}.`);
+    }
+}
+
+/**
+ * Why a download failed, saying so plainly when it timed out.
+ *
+ * @param {unknown} error
+ * @param {number} timeoutMs
+ */
+function downloadFailure(error, timeoutMs) {
+    const name = /** @type {any} */ (error)?.name;
+
+    if (name === 'TimeoutError' || name === 'AbortError') {
+        const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+
+        return `it took longer than ${seconds} ${seconds === 1 ? 'second' : 'seconds'}, so the import stopped and nothing was written. Check the connection and run import again (call export_product for a fresh link if this one is over 10 minutes old)`;
+    }
+
+    return messageOf(/** @type {any} */ (error)?.cause ?? error);
+}
+
+/**
+ * Refuse a bundle whose names would leave the product folder: every name
+ * that becomes a path (the slug, the type, each media tag and file name)
+ * must be plain.
+ *
+ * @param {Record<string, any>} product
+ * @param {unknown[]} media
+ */
+function checkBundlePaths(product, media) {
+    if (!isSlug(product.slug)) {
+        throw new ImportError(`The bundle's slug "${product.slug}" is not a valid slug, so nothing was written. Export the product again; if it persists, contact support@rafflex.io.`);
+    }
+
+    if (!/^[a-z][a-z0-9_-]*$/.test(product.type)) {
+        throw new ImportError(`The bundle's product type "${product.type}" is not a valid type, so nothing was written.`);
+    }
+
+    for (const [index, entry] of media.entries()) {
+        if (entry === null || typeof entry !== 'object') {
+            throw new ImportError(`The bundle's media ${index + 1} is not an object, so nothing was written.`);
+        }
+
+        const { tag, filename } = /** @type {Record<string, any>} */ (entry);
+
+        if (tag !== null && tag !== undefined && tag !== '' && !isSlug(tag)) {
+            throw new ImportError(`The bundle's media ${index + 1} has the tag "${tag}", which is not a valid tag (lower case words joined by hyphens), so nothing was written. Export the product again; if it persists, contact support@rafflex.io.`);
+        }
+
+        if (filename !== null && filename !== undefined && filename !== '' && !isPlainFilename(filename)) {
+            throw new ImportError(`The bundle's media ${index + 1} has the file name "${filename}", which is not a plain file name, so nothing was written. Export the product again; if it persists, contact support@rafflex.io.`);
+        }
+    }
 }
 
 /**
@@ -112,9 +187,6 @@ export function parseBundle(text) {
         throw new ImportError('The bundle has no product with a slug and type.');
     }
 
-    if (!slugPattern.test(product.slug)) {
-        throw new ImportError(`The bundle's slug "${product.slug}" is not a valid slug.`);
-    }
 
     if (bundle.files === null || typeof bundle.files !== 'object' || Array.isArray(bundle.files)) {
         throw new ImportError('The bundle has no files.');
@@ -129,6 +201,8 @@ export function parseBundle(text) {
     if (bundle.media !== undefined && !Array.isArray(bundle.media)) {
         throw new ImportError('The bundle\'s media must be a list.');
     }
+
+    checkBundlePaths(product, bundle.media ?? []);
 
     return { ...bundle, media: bundle.media ?? [] };
 }
@@ -174,22 +248,30 @@ export function importedVersion(product) {
 }
 
 /**
+ * Download one file, giving up after `timeoutMs`.
+ *
  * @param {string} url
+ * @param {number} [timeoutMs]
+ * @returns {Promise<Buffer>}
  */
-async function download(url) {
+export async function download(url, timeoutMs = mediaTimeoutMs) {
     let response;
 
     try {
-        response = await fetch(url);
+        response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
-        throw new ImportError(`Could not download ${url}: ${messageOf(/** @type {any} */ (error)?.cause ?? error)}.`);
+        throw new ImportError(`Could not download ${url}: ${downloadFailure(error, timeoutMs)}.`);
     }
 
     if (!response.ok) {
         throw new ImportError(`Could not download ${url}: the server answered ${response.status}.`);
     }
 
-    return Buffer.from(await response.arrayBuffer());
+    try {
+        return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+        throw new ImportError(`Could not download ${url}: ${downloadFailure(error, timeoutMs)}.`);
+    }
 }
 
 /**
@@ -216,7 +298,7 @@ async function writeProductFolder(directory, bundle, type) {
     writeFileSync(join(assetsDirectory, '.gitkeep'), '');
 
     for (const name of bundleFiles) {
-        writeFileSync(join(directory, name), bundle.files[name] ?? defaults[name]);
+        writeFileSync(confinedWritePath(directory, name), bundle.files[name] ?? defaults[name]);
     }
 
     writeProductJson(directory, {
@@ -258,7 +340,7 @@ async function writeProductFolder(directory, bundle, type) {
             throw new ImportError(`${entry.filename} (${entry.tag}) does not match the bundle's hash: the download was ${hash}, the marketplace recorded ${entry.sha256}. Export again; if it persists, contact support@rafflex.io.`);
         }
 
-        writeFileSync(join(assetsDirectory, filename), contents);
+        writeFileSync(confinedWritePath(directory, join(assetsDirectoryName, filename)), contents);
         assets.push({ path: `${assetsDirectoryName}/${filename}`, tag: entry.tag, sha256: hash });
     }
 
@@ -320,7 +402,7 @@ async function writeListingImages(directory, product) {
         const name = `cover.${listingImageExtension(contents, /** @type {string} */ (images.cover.url))}`;
 
         mkdirSync(join(directory, listingDirectoryName), { recursive: true });
-        writeFileSync(join(directory, listingDirectoryName, name), contents);
+        writeFileSync(confinedWritePath(directory, join(listingDirectoryName, name)), contents);
         written.push(`${listingDirectoryName}/${name}`);
     }
 
@@ -329,7 +411,7 @@ async function writeListingImages(directory, product) {
         const name = `${String(index + 1).padStart(2, '0')}.${listingImageExtension(contents, /** @type {string} */ (screenshot.url))}`;
 
         mkdirSync(join(directory, listingDirectoryName, screenshotsDirectoryName), { recursive: true });
-        writeFileSync(join(directory, listingDirectoryName, screenshotsDirectoryName, name), contents);
+        writeFileSync(confinedWritePath(directory, join(listingDirectoryName, screenshotsDirectoryName, name)), contents);
         written.push(`${listingDirectoryName}/${screenshotsDirectoryName}/${name}`);
     }
 
@@ -404,6 +486,10 @@ export async function runImportCommand(context) {
     const slug = bundle.product.slug;
     const typeDirectory = join(workspace.root, assetType.folder);
     const target = join(typeDirectory, slug);
+
+    if (!resolvesInside(workspace.root, typeDirectory) || !resolvesInside(typeDirectory, target)) {
+        return fail(context, `The bundle's product would be written outside the workspace (${assetType.folder}/${slug}), so nothing was written.`, 2);
+    }
     const path = `${assetType.folder}/${slug}`;
     const products = listProducts(workspace);
     const existing = products.find((product) => product.slug === slug && product.type === assetType.value)
@@ -469,6 +555,8 @@ export async function runImportCommand(context) {
     } else {
         renameSync(temporary, target);
     }
+
+    recordSyncTime(workspace.root, { slug, path });
 
     const revertedFrom = typeof bundle.product.draft?.reverted_from === 'string' ? bundle.product.draft.reverted_from : null;
     const message = revertedFrom === null ? `Import ${slug} from the marketplace` : `Revert ${slug} to ${revertedFrom} as ${written.version}`;

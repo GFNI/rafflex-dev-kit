@@ -33,6 +33,28 @@ export function fail({ stdout, stderr, options }, message, code = 2, extra = {})
 }
 
 /**
+ * Report a refusal the way push, synced, and release do: `{error: {code,
+ * message, issues?}}` as JSON with --json, the message (and any issue
+ * lines) on stderr otherwise.
+ *
+ * @param {import('../cli.js').CommandContext} context
+ * @param {{code: string, message: string, issues?: any[], retry_after_seconds?: number}} error
+ * @param {number} exitCode
+ * @param {Record<string, unknown>} [extra] Extra JSON fields beside `error`.
+ * @param {string[]} [lines] Lines to print under the message without --json.
+ * @returns {number}
+ */
+export function failWithCode({ stdout, stderr, options }, error, exitCode, extra = {}, lines = []) {
+    if (options.json) {
+        writeJson(stdout, { ...extra, error });
+    } else {
+        stderr.write(`${[error.message, ...lines].join('\n')}\n`);
+    }
+
+    return exitCode;
+}
+
+/**
  * @param {unknown} error
  */
 export function messageOf(error) {

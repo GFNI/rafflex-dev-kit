@@ -12,6 +12,11 @@ The kit closes the loop: a product goes from an empty folder to in review withou
 * `release` marks the version in review in the recorded state, so the app shows In review without another sync. `release --json` adds `in_review`.
 * A sync that records a draft changed elsewhere is committed as "Sync <slug> (draft revision N)", so `restore last-push` only returns to real pushes and imports.
 * `plan` tells an AI with a shell to call `request_sync` and run `push`, and keeps the tool by tool route for AI apps without one.
+* A push compares the draft's version and revision, so a new draft started in the studio is a conflict even at the same revision number. A never pushed folder refuses a link for an existing product (`wrong_link`). Tags compare by the marketplace's slug, so `WHEEL` and `wheel` are one tag and a second push has nothing to send. A push that changed nothing on the marketplace makes no commit, and one where files did not upload says so in its commit ("2 files not uploaded") and keeps them as changes.
+* A saved verify is reused only when no file in the folder changed and the platform's rules are the ones it was made with.
+* `release <product> <sync_url>` changes nothing unless the marketplace has the version in review (`not_submitted`, exit 1).
+* `push`, `synced`, and `release` report a refusal as `{error: {code, message}}`; `rate_limited` and `forbidden` exit 1. A folder renamed on its first push is still found by its old path.
+* Names from outside (an export bundle, a sync link's answer) never become paths outside the workspace: an unsafe slug, type, tag, or file name is refused, and `import` downloads give up after a timeout.
 * The kit holds no secret and never signs in. It sends files only to the sync link's own marketplace and the upload links it answers with, never follows a redirect, prints the link with its signature left out, and never writes it to disk or git.
 
 ### Feedback in the workspace
