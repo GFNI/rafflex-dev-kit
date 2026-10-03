@@ -238,6 +238,9 @@ function commitHoldingBack(root, paths, message, holdBack) {
     const indexPath = runGit(root, ['rev-parse', '--path-format=absolute', '--git-path', `rafflex-index-${process.pid}`]).stdout.trim();
     const env = { GIT_INDEX_FILE: indexPath };
     const head = runGit(root, ['rev-parse', '-q', '--verify', 'HEAD^{commit}']).stdout.trim() || null;
+    // update-index takes paths from the repository's top, which is above
+    // the workspace when the workspace is a folder inside a larger repository.
+    const prefix = runGit(root, ['rev-parse', '--show-prefix']).stdout.trim();
 
     try {
         const steps = [
@@ -259,7 +262,7 @@ function commitHoldingBack(root, paths, message, holdBack) {
             const match = entry.match(/^(\d+) blob ([0-9a-f]+)\t/);
             const step = match === null
                 ? runGit(root, ['rm', '--cached', '-q', '--ignore-unmatch', '--', file], env)
-                : runGit(root, ['update-index', '--add', '--cacheinfo', `${match[1]},${match[2]},${file}`], env);
+                : runGit(root, ['update-index', '--add', '--cacheinfo', `${match[1]},${match[2]},${prefix}${file}`], env);
 
             if (!step.ok) {
                 return { committed: false, error: `git could not hold back ${file}: ${step.stderr}` };
