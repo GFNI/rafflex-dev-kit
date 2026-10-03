@@ -3,7 +3,10 @@ import { extname, join, resolve } from 'node:path';
 import { defaultTagFor } from '../assets.js';
 import { readAll } from '../cli.js';
 import { commitProduct } from '../git.js';
+import { extensionFor, sniffContent } from '../file-content.js';
+import { listingDirectoryName, remoteListingImagesFrom, screenshotsDirectoryName } from '../listing-images.js';
 import { formatListing } from '../listing.js';
+import { planListingImagesFor } from '../push-plan.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { bumpVersion, isVersion } from '../semver.js';
 import { compareWithRemote, latestReleasedVersion, readLocalState, remoteFromProduct, sha256 } from '../sync-state.js';
@@ -259,13 +262,85 @@ async function writeProductFolder(directory, bundle, type) {
         assets.push({ path: `${assetsDirectoryName}/${filename}`, tag: entry.tag, sha256: hash });
     }
 
-    return { version, files: [...bundleFiles], assets, skipped };
+    const listingImages = await writeListingImages(directory, product);
+
+    return { version, files: [...bundleFiles, ...listingImages], assets, skipped };
+}
+
+/**
+ * The extension a downloaded listing image is saved with: what its
+ * content is, else what its URL says, else png.
+ *
+ * @param {Buffer} contents
+ * @param {string} url
+ */
+function listingImageExtension(contents, url) {
+    const sniffed = sniffContent(contents);
+
+    if (sniffed !== null) {
+        return extensionFor[sniffed];
+    }
+
+    const fromUrl = extname(new URL(url).pathname).slice(1).toLowerCase();
+
+    return /^[a-z0-9]{2,5}$/.test(fromUrl) ? fromUrl : 'png';
+}
+
+/**
+ * Download the product's cover and screenshots into listing/, checking
+ * each against the hash the marketplace reported. Screenshots are named
+ * 01, 02, ... so filename order keeps the marketplace's order.
+ *
+ * @param {string} directory
+ * @param {Record<string, any>} product
+ * @returns {Promise<string[]>} The files written, relative to the product folder.
+ */
+async function writeListingImages(directory, product) {
+    const images = remoteListingImagesFrom(product);
+    /** @type {string[]} */
+    const written = [];
+    const fetchChecked = async (/** @type {{url: string|null, sha256: string|null}} */ image, /** @type {string} */ label) => {
+        const contents = await download(/** @type {string} */ (image.url));
+        const hash = sha256(contents);
+
+        if (image.sha256 !== null && image.sha256 !== hash) {
+            throw new ImportError(`The ${label} does not match the bundle's hash: the download was ${hash}, the marketplace recorded ${image.sha256}. Export again; if it persists, contact support@rafflex.io.`);
+        }
+
+        return contents;
+    };
+    const isDownloadable = (/** @type {{url: string|null}} */ image) => typeof image.url === 'string' && /^https?:\/\//i.test(image.url);
+
+    if (images === undefined) {
+        return written;
+    }
+
+    if (images.cover !== null && isDownloadable(images.cover)) {
+        const contents = await fetchChecked(images.cover, 'cover image');
+        const name = `cover.${listingImageExtension(contents, /** @type {string} */ (images.cover.url))}`;
+
+        mkdirSync(join(directory, listingDirectoryName), { recursive: true });
+        writeFileSync(join(directory, listingDirectoryName, name), contents);
+        written.push(`${listingDirectoryName}/${name}`);
+    }
+
+    for (const [index, screenshot] of images.screenshots.filter(isDownloadable).entries()) {
+        const contents = await fetchChecked(screenshot, `screenshot ${index + 1}`);
+        const name = `${String(index + 1).padStart(2, '0')}.${listingImageExtension(contents, /** @type {string} */ (screenshot.url))}`;
+
+        mkdirSync(join(directory, listingDirectoryName, screenshotsDirectoryName), { recursive: true });
+        writeFileSync(join(directory, listingDirectoryName, screenshotsDirectoryName, name), contents);
+        written.push(`${listingDirectoryName}/${screenshotsDirectoryName}/${name}`);
+    }
+
+    return written;
 }
 
 /**
  * @param {import('../sync-state.js').LocalChanges} changes
+ * @param {import('../listing-images.js').ListingImagesPlan} [listingImages]
  */
-function describeChanges(changes) {
+function describeChanges(changes, listingImages) {
     return [
         changes.template && 'template.twig',
         changes.options && 'options.json',
@@ -273,6 +348,8 @@ function describeChanges(changes) {
         ...changes.assets.new.map((asset) => `${asset.path} (new)`),
         ...changes.assets.changed.map((asset) => `${asset.path} (changed)`),
         ...changes.assets.removed.map((entry) => `${entry.filename} (removed)`),
+        ...(listingImages?.cover ? [`${listingImages.cover.path} (${listingImages.cover.change})`] : []),
+        ...(listingImages?.screenshots ?? []).map((screenshot) => `${screenshot.path} (new)`),
     ].filter((entry) => typeof entry === 'string');
 }
 
@@ -344,7 +421,9 @@ export async function runImportCommand(context) {
         try {
             const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
 
-            changes = describeChanges(compareWithRemote(readLocalState(existing, documents), existing.manifest.remote));
+            const local = readLocalState(existing, documents);
+
+            changes = describeChanges(compareWithRemote(local, existing.manifest.remote), planListingImagesFor(local, existing.manifest.remote));
         } catch {
             changes = [];
         }
