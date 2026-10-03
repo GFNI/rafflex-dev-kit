@@ -141,6 +141,21 @@ describe('workspace commands', () => {
             assert.equal(readFileSync(join(directory, 'assets', '.gitkeep'), 'utf8'), '');
         });
 
+        test('the platform starters come out formatted and with no issues', async () => {
+            const root = temporaryWorkspace();
+
+            await runJson(['new', 'game', 'Starter Game'], { cwd: root, baseUrl: server.baseUrl });
+            await runJson(['new', 'block', 'Starter Block'], { cwd: root, baseUrl: server.baseUrl });
+
+            const { code, output } = await runJson(['check', '--all'], { cwd: root, baseUrl: server.baseUrl });
+
+            assert.equal(code, 0);
+            assert.deepEqual(output.products.map((/** @type {{product: string, issues: {code: string}[]}} */ product) => [product.product, product.issues.map((issue) => issue.code)]), [
+                ['games/starter-game', []],
+                ['blocks/starter-block', []],
+            ]);
+        });
+
         test('takes --type and works from anywhere in the workspace', async () => {
             const root = temporaryWorkspace({ products: [{ title: 'Spin to Win' }] });
             const { code } = await runJson(['new', '--type', 'games', 'Scratch Card'], { cwd: join(root, 'games', 'spin-to-win'), baseUrl: server.baseUrl });
