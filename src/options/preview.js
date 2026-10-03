@@ -16,7 +16,9 @@ import { resolveOptions, valueLimits, valuesFromQuery } from './values.js';
  *   help, and choices from options.json, each toggle's starting value, the
  *   product's images (an image option may only hold one), the sample
  *   categories, the warnings, and the images a buyer may replace.
- * - `assets/.rafflex/buyer-image/<tag>.png?w=&h=` is a placeholder.
+ * - `assets/.rafflex/buyer-image/<tag>-<width>x<height>.png` is a
+ *   placeholder. The size is in the path, not a query, so the URL needs no
+ *   `&`, which autoescaping would turn into `&amp;` inside a `<style>`.
  */
 
 /**
@@ -123,15 +125,18 @@ export function serveOptionsRoute({ product, rest, url, response, contexts, base
         return false;
     }
 
-    if (!/^[^/]+\.png$/.test(rest.slice(`assets/${buyerImagePath}`.length))) {
+    const name = rest.slice(`assets/${buyerImagePath}`.length);
+
+    if (!/^[^/]+\.png$/.test(name)) {
         send(response, 404, 'Not found');
 
         return true;
     }
 
-    const size = (/** @type {string} */ name, /** @type {number} */ fallback) => Math.max(8, Math.min(2000, Number.parseInt(url.searchParams.get(name) ?? '', 10) || fallback));
-    const width = size('w', 960);
-    const height = size('h', 320);
+    const sized = name.match(/-(\d+)x(\d+)\.png$/);
+    const size = (/** @type {string|undefined} */ value, /** @type {string} */ query, /** @type {number} */ fallback) => Math.max(8, Math.min(2000, Number.parseInt(value ?? url.searchParams.get(query) ?? '', 10) || fallback));
+    const width = size(sized?.[1], 'w', 960);
+    const height = size(sized?.[2], 'h', 320);
     const key = `${width}x${height}`;
     const png = placeholders.get(key) ?? placeholderPng(width, height);
 

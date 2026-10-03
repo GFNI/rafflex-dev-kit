@@ -383,7 +383,7 @@ describe('the preview with options', () => {
             products: [
                 {
                     folder: 'spin-to-win',
-                    template: '<h2>{{ options.heading|default("Spin") }}</h2><p>{{ options.size|default("Medium") }}</p><p>{{ options.show_title ? "shown" : "hidden" }}</p><img src="{{ files[\'wheel\'] }}" alt=""><img src="{{ files[\'logo\'] }}" alt="">\n',
+                    template: '<h2>{{ options.heading|default("Spin") }}</h2><p>{{ options.size|default("Medium") }}</p><p>{{ options.show_title ? "shown" : "hidden" }}</p><img src="{{ files[\'wheel\'] }}" alt=""><img src="{{ files[\'logo\'] }}" alt=""><style>.hero { background-image: url({{ files[\'wheel\'] }}); }</style>\n',
                     options: { heading: { label: 'Title', help: 'Above the wheel' }, size: { choices: ['Small', 'Large'] } },
                     assets: { 'wheel.png': pngOf(400, 400), 'logo.png': pngOf(900, 200), 'unused.png': pngOf(10, 10) },
                 },
@@ -438,8 +438,9 @@ describe('the preview with options', () => {
         const sources = [...frame.matchAll(/<img src="([^"]+)"/g)].map((match) => match[1].replace(/&amp;/g, '&'));
         const csp = String(response.headers['content-security-policy']);
 
-        assert.deepEqual(sources, ['/p/games/spin-to-win/assets/.rafflex/buyer-image/wheel.png?w=960&h=320', '/p/games/spin-to-win/assets/.rafflex/buyer-image/logo.png?w=480&h=720']);
+        assert.deepEqual(sources, ['/p/games/spin-to-win/assets/.rafflex/buyer-image/wheel-960x320.png', '/p/games/spin-to-win/assets/.rafflex/buyer-image/logo-480x720.png']);
         assert.ok(csp.includes(`${gameUrl}assets/`), csp);
+        assert.ok(frame.includes('<style>.hero { background-image: url(/p/games/spin-to-win/assets/.rafflex/buyer-image/wheel-960x320.png); }</style>'), frame);
 
         const placeholder = await get(`${server.url}${sources[1].slice(1)}`);
 
