@@ -502,7 +502,7 @@ function platformDate(value, params = []) {
 const arithmeticOperators = ['+', '-', '*', '/', '//', '%', '**'];
 
 /**
- * A PHP type name for an operand, for the platform's refusal message.
+ * The type name the platform's refusal message gives an operand.
  *
  * @param {unknown} value
  */

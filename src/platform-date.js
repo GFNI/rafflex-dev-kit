@@ -96,7 +96,7 @@ function formatCharacter(character, date) {
 }
 
 /**
- * A date printed with a PHP style format, in UTC. A backslash prints the
+ * A date printed with the platform's format characters, in UTC. A backslash prints the
  * next character as it is; a character that is not a format character
  * prints itself.
  *
