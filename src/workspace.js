@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { readCachedDocuments, resolveBaseUrl } from './remote.js';
+import { newerTime, readSyncTimes, syncTimeKey } from './sync-times.js';
 
 /**
  * The workspace: one folder per creator account holding every product in
@@ -58,10 +59,13 @@ export const legacyLayoutMessage = 'This folder uses the old single project layo
  * @property {string|null} live_channel
  * @property {ProductRemoteDraft|null} draft
  * @property {string|null} listing_sha256
+ * @property {string[]} [listing_tag_names] The tag names, as listing.md wrote them, behind the marketplace's tags; listing tags then compare as written.
+ * @property {string[]} [listing_marketplace_tags] The marketplace's tag names when that record was made.
  * @property {Record<string, any>|null} latest_review
- * @property {{tag: string, filename: string, sha256: string|null, kind: string, library: any}[]} media
+ * @property {{tag: string, filename: string, sha256: string|null, kind: string, library: any, locked?: boolean, size_bytes?: number}[]} media
+ * @property {import('./listing-images.js').RemoteListingImages} [listing_images]  The cover and screenshots with their SHA-256, when the marketplace reported them.
  *
- * @typedef {{type: string, slug: string|null, title: string, version: string, remote: ProductRemote|null}} ProductManifest
+ * @typedef {{type: string, slug: string|null, title: string, version: string, remote: ProductRemote|null, previous_paths?: string[]}} ProductManifest
  *
  * @typedef {object} Product
  * @property {string} path         Workspace relative path, the product's id in output: "games/spin-to-win".
@@ -220,7 +224,8 @@ export function assetTypeNamed(workspace, name) {
 
 /**
  * Read a product folder. The type comes from the type folder it sits in,
- * since the layout is the contract.
+ * since the layout is the contract. `remote.synced_at` is the newer of
+ * product.json's and the last successful sync recorded in `.rafflex/`.
  *
  * @param {Workspace} workspace
  * @param {AssetType} assetType
@@ -230,6 +235,13 @@ export function assetTypeNamed(workspace, name) {
 export function readProduct(workspace, assetType, folder) {
     const directory = join(workspace.root, assetType.folder, folder);
     const manifest = readProductJson(directory);
+
+    // A sync that changed nothing is recorded outside git; the newer time counts.
+    if (manifest.remote !== null) {
+        const recorded = readSyncTimes(workspace.root)[syncTimeKey({ slug: manifest.slug, path: `${assetType.folder}/${folder}` })];
+
+        manifest.remote = { ...manifest.remote, synced_at: /** @type {string} */ (newerTime(manifest.remote.synced_at, recorded)) };
+    }
 
     return {
         path: `${assetType.folder}/${folder}`,
@@ -328,9 +340,44 @@ export function resolveProduct(workspace, products, argument, cwd) {
         throw new WorkspaceError(`"${argument}" matches more than one product (${matches.map((product) => product.path).join(', ')}). Name it by path, for example ${matches[0].path}.`);
     }
 
+    const renamed = renamedProduct(workspace, products, name, fromCwd);
+
+    if (renamed !== null) {
+        return renamed;
+    }
+
     const known = products.length === 0 ? 'There are no products yet; add one with npx @rafflex/dev new.' : `Products: ${products.map((product) => product.slug ?? product.path).join(', ')}.`;
 
     throw new WorkspaceError(`No product "${argument}" in this workspace. ${known}`);
+}
+
+/**
+ * The product a folder used to be, by a path the kit recorded in its
+ * product.json (`previous_paths`) when it renamed the folder to the slug
+ * on the first push, so a command run with the old path still finds it.
+ * Says on stderr where the folder is now.
+ *
+ * @param {Workspace} workspace
+ * @param {Product[]} products
+ * @param {string} name
+ * @param {string} fromCwd
+ * @returns {Product|null}
+ */
+function renamedProduct(workspace, products, name, fromCwd) {
+    const wanted = new Set([name.split(sep).join('/'), relative(workspace.root, fromCwd).split(sep).join('/')]);
+    const matches = products.filter((product) => {
+        const previous = Array.isArray(product.manifest.previous_paths) ? product.manifest.previous_paths : [];
+
+        return previous.some((/** @type {unknown} */ path) => typeof path === 'string' && (wanted.has(path) || path.split('/').pop() === name));
+    });
+
+    if (matches.length !== 1) {
+        return null;
+    }
+
+    process.stderr.write(`note: ${name} was renamed to its slug; the product is now ${matches[0].path}.\n`);
+
+    return matches[0];
 }
 
 /**
@@ -391,9 +438,9 @@ export function selectProduct(workspace, name, cwd) {
 }
 
 const productKeys = ['type', 'slug', 'title', 'version', 'remote'];
-const remoteKeys = ['synced_at', 'status', 'live_version', 'live_channel', 'draft', 'listing_sha256', 'latest_review', 'media'];
+const remoteKeys = ['synced_at', 'status', 'live_version', 'live_channel', 'draft', 'listing_sha256', 'listing_tag_names', 'listing_marketplace_tags', 'latest_review', 'media', 'listing_images'];
 const draftKeys = ['version', 'revision', 'submitted', 'template_sha256', 'option_overrides_sha256'];
-const mediaKeys = ['tag', 'filename', 'sha256', 'kind', 'library'];
+const mediaKeys = ['tag', 'filename', 'sha256', 'kind', 'library', 'locked', 'size_bytes'];
 
 /**
  * Copy an object with `keys` first, in that order, then any other keys in

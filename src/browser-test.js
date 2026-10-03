@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { scanAssets } from './assets.js';
+import { recordedMedia, scanAssets } from './assets.js';
 import { scenarioValues } from './checker.js';
 import { gameContext } from './context.js';
 import { assetUrl, startDevServer } from './dev-server.js';
 import { hasPlaythroughHooks } from './game-rules.js';
+import { buyerImageRuns } from './options/browser-run.js';
 import { kitIssue } from './quality.js';
 import { readTemplate, resultsDirectoryName, testsDirectoryName } from './workspace.js';
 
@@ -21,6 +22,9 @@ import { readTemplate, resultsDirectoryName, testsDirectoryName } from './worksp
  *   entry in plays and checks each data-rafflex-result revealed matches
  *   the predetermined result, in order, and that no plays shows an empty
  *   state;
+ * - buyer images (games whose template uses images): every image a buyer
+ *   may replace swapped for a placeholder of another shape, at one phone
+ *   and one desktop width (see options/browser-run.js);
  * - the creator's own specs in tests/, with the kit's helpers.
  *
  * Everything a run writes goes in the product's .results/ folder.
@@ -35,6 +39,9 @@ export const devices = Object.freeze([
 const revealTimeoutMs = 10000;
 
 const settleMs = 300;
+
+/** Shared with the listing image capture (capture.js, PRD 45). */
+export { revealRecorder, playNextEntry, settleMs };
 
 /**
  * Records every outcome the page reveals once recording starts: an element
@@ -79,7 +86,7 @@ const revealRecorder = `(() => {
  * @typedef {{scenario: string|null, device: string, width: number, screenshot: string}} RunRecord
  * @typedef {{scenario: string, expected: string[], revealed: string[], passed: boolean}} PlaythroughRecord
  * @typedef {{file: string, name: string, passed: boolean, error?: string, screenshot?: string}} CreatorTestRecord
- * @typedef {{issues: TestIssue[], runs: RunRecord[], playthrough: PlaythroughRecord[]|null, creator_tests: CreatorTestRecord[]}} BrowserTestResult
+ * @typedef {{issues: TestIssue[], runs: RunRecord[], playthrough: PlaythroughRecord[]|null, creator_tests: CreatorTestRecord[], buyer_images: RunRecord[]|null}} BrowserTestResult
  */
 
 /**
@@ -291,13 +298,25 @@ export async function runBrowserTests({ browser, workspace, loaded, product }) {
     mkdirSync(screenshots, { recursive: true });
 
     const template = readTemplate(product);
-    const files = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl).files;
+    const files = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl, recordedMedia(product)).files;
     const playCount = documents.contexts.play_count?.default ?? 5;
     const isGame = product.type !== 'block';
     const scenarios = isGame ? scenarioValues(documents) : [null];
     const hooked = isGame && hasPlaythroughHooks(template);
     const server = await startDevServer({ workspace, loaded, port: 0, watchFiles: false });
-    const frameUrl = (/** @type {string|null} */ scenario, count = playCount) => `${server.urlFor(product)}frame${scenario === null ? '' : `?scenario=${encodeURIComponent(scenario)}&play_count=${count}`}`;
+    const frameUrl = (/** @type {string|null} */ scenario, count = playCount, /** @type {{options?: Record<string, unknown>, buyerImages?: boolean}} */ extra = {}) => {
+        const query = new URLSearchParams(scenario === null ? {} : { scenario, play_count: String(count ?? playCount) });
+
+        if (extra.options !== undefined && Object.keys(extra.options).length > 0) {
+            query.set('options', JSON.stringify(extra.options));
+        }
+
+        if (extra.buyerImages === true) {
+            query.set('buyer_images', '1');
+        }
+
+        return `${server.urlFor(product)}frame${query.size === 0 ? '' : `?${query}`}`;
+    };
     const expectedWins = (/** @type {string} */ scenario) => gameContext(documents.contexts, { scenario, playCount, files, template }).plays.map((/** @type {{won: boolean}} */ play) => play.won === true);
     /** @type {TestIssue[]} */
     const issues = [];
@@ -380,13 +399,23 @@ export async function runBrowserTests({ browser, workspace, loaded, product }) {
             }
         }
 
+        const buyerImages = await buyerImageRuns({ browser, workspace, product, template, documents, frameUrl, scenario: scenarios[0], screenshots, devices, watchPage, cspViolations, settle: (/** @type {any} */ page) => pause(page, settleMs), relativeToWorkspace });
+
+        for (const run of buyerImages?.runs ?? []) {
+            runs.push(run);
+        }
+
+        for (const problem of buyerImages?.problems ?? []) {
+            addIssue(problem, 'buyer_images', problem.screenshot);
+        }
+
         const creatorTests = await runCreatorSpecs({ browser, workspace, product, frameUrl, expectedWins, screenshots, scenarios });
 
         for (const failed of creatorTests.filter((test) => !test.passed)) {
             addIssue({ code: 'creator_test_failed', message: `${failed.file}: ${failed.name}: ${failed.error}` }, null, failed.screenshot);
         }
 
-        return { issues, runs, playthrough, creator_tests: creatorTests };
+        return { issues, runs, playthrough, creator_tests: creatorTests, buyer_images: buyerImages === null ? null : buyerImages.runs };
     } finally {
         await server.close();
     }
@@ -397,7 +426,7 @@ export async function runBrowserTests({ browser, workspace, loaded, product }) {
  *
  * @typedef {object} SpecHelpers
  * @property {any} page The Playwright page (after open).
- * @property {(scenario?: string, options?: {width?: number, playCount?: number}) => Promise<any>} open Open the product in a scenario.
+ * @property {(scenario?: string, options?: {width?: number, playCount?: number, options?: Record<string, unknown>}) => Promise<any>} open Open the product in a scenario, optionally with option values set as a site owner or buyer sets them.
  * @property {() => Promise<string>} playNext Play the next entry and return the revealed result.
  * @property {() => Promise<string|null>} result The last revealed result.
  * @property {() => Promise<string[]>} results Every revealed result so far.
@@ -451,7 +480,7 @@ async function runCreatorSpecs({ browser, workspace, product, frameUrl, expected
                             await page.setViewportSize({ width: options.width, height: 800 });
                         }
 
-                        await page.goto(frameUrl(scenario ?? null, options.playCount), { waitUntil: 'load' });
+                        await page.goto(frameUrl(scenario ?? null, options.playCount, { options: options.options }), { waitUntil: 'load' });
                         await pause(page, settleMs);
 
                         return page;

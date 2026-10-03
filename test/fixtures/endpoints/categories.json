@@ -1,0 +1,35 @@
+{
+    "version": "f15138804db5",
+    "categories": [
+        {
+            "id": 1,
+            "name": "Arcade Games",
+            "slug": "arcade-games"
+        },
+        {
+            "id": 2,
+            "name": "Countdowns",
+            "slug": "countdowns"
+        },
+        {
+            "id": 3,
+            "name": "Instant Win",
+            "slug": "instant-win"
+        },
+        {
+            "id": 4,
+            "name": "Scratch Cards",
+            "slug": "scratch-cards"
+        },
+        {
+            "id": 5,
+            "name": "Spin Games",
+            "slug": "spin-games"
+        },
+        {
+            "id": 6,
+            "name": "Winner Walls",
+            "slug": "winner-walls"
+        }
+    ]
+}

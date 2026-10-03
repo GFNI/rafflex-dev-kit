@@ -5,15 +5,17 @@ import { createRequire } from 'node:module';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { createProduct, isInside, openFolder, testRunner } from './app/actions.js';
 import { detectClients, detectOpeners } from './app/clients.js';
-import { productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
+import { feedbackView, productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
 import { promptSource } from './app/prompts.js';
 import { imageExtensions, readLastResult, resultsDirectoryName } from './app/results.js';
-import { scanAssets } from './assets.js';
+import { recordedMedia, scanAssets } from './assets.js';
 import { nonBlockingCodes, runChecks, scenarioValues, verdictNote } from './checker.js';
+import { productFileIssues } from './product-checks.js';
 import { qualityIssues } from './quality.js';
 import { unreleasedNotes } from './commands/release.js';
 import { productStatus } from './commands/status.js';
 import { blockContext, gameContext } from './context.js';
+import { frameSelection, serveOptionsRoute } from './options/preview.js';
 import { isGitInstalled, isInsideRepository } from './git.js';
 import { cspHeader, frameDocument, localCspDirectives } from './preview.js';
 import { kitVersion } from './version.js';
@@ -347,6 +349,10 @@ export function productSummary(product, documents) {
     ].filter(Boolean);
     const changed = [changes.template && 'template', changes.options && 'options', changes.listing && 'listing', assetParts.length > 0 && `assets (${assetParts.join(', ')})`].filter(Boolean);
 
+    if (changes.listing_images.cover || changes.listing_images.screenshots > 0) {
+        changed.push('listing images');
+    }
+
     return {
         path: product.path,
         type: product.type,
@@ -367,6 +373,8 @@ export function productSummary(product, documents) {
         },
         local: remote === null ? null : { changed: /** @type {string[]} */ (changed) },
         problems: status.problems,
+        submission: status.submission,
+        feedback: status.feedback,
     };
 }
 
@@ -483,7 +491,7 @@ export async function startDevServer({
     const productFiles = (product) => {
         const template = readTemplate(product);
         const basePath = productBasePath(product);
-        const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], (path) => assetUrl(path, basePath));
+        const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], (path) => assetUrl(path, basePath), recordedMedia(product));
 
         return { template, scan };
     };
@@ -548,9 +556,10 @@ export async function startDevServer({
     const serveFrame = (product, url, response) => {
         const { scenario, playCount } = selectionFrom(url);
         const { template, scan } = productFiles(product);
+        const { files, options, overrides } = frameSelection({ product, url, template, scan, contexts: documents.contexts, basePath: productBasePath(product) });
         const context = product.type === 'block'
-            ? blockContext(documents.contexts, { files: scan.files, template })
-            : gameContext(documents.contexts, { scenario, playCount, files: scan.files, template });
+            ? blockContext(documents.contexts, { files, template, options, overrides })
+            : gameContext(documents.contexts, { scenario, playCount, files, template, options, overrides });
         let html = null;
         let error = null;
 
@@ -589,6 +598,7 @@ export async function startDevServer({
             });
 
             issues.push(...await qualityIssues({ type: product.type, template, files: scan.files, documents }));
+            issues.push(...productFileIssues(product, documents));
 
             payload = {
                 issues,
@@ -671,6 +681,7 @@ export async function startDevServer({
             state: productState(summary),
             test: { ...testSummary(result), at: result?.at ?? null, running: runner.isRunning(product.path) },
             hand_to_ai: productPrompts(summary, result, promptsDocument).hand_to_ai?.text ?? null,
+            ...feedbackView(summary, result, promptsDocument),
         };
     };
 
@@ -701,6 +712,7 @@ export async function startDevServer({
             result,
             publish: publishStep(summary, result, document),
             prompts: productPrompts(summary, result, document),
+            ...feedbackView(summary, result, document),
             changelog,
             scenarios: documents.contexts.scenarios ?? [],
             play_count: documents.contexts.play_count ?? { min: 1, max: 25, default: 5 },
@@ -1008,6 +1020,10 @@ export async function startDevServer({
         if (rest.startsWith(resultsRoutePrefix)) {
             serveResult(product, rest.slice(resultsRoutePrefix.length), response);
 
+            return;
+        }
+
+        if (serveOptionsRoute({ product, rest, url, response, contexts: documents.contexts, basePath: productBasePath(product), productFiles: () => productFiles(product), sendJson, send })) {
             return;
         }
 

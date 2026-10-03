@@ -1,12 +1,14 @@
 import { commandNamed, devKitCommands } from './command-list.js';
+import { runCaptureCommand } from './commands/capture.js';
 import { runCheckCommand } from './commands/check.js';
 import { runDevCommand } from './commands/dev.js';
 import { runFormatCommand } from './commands/format.js';
 import { runInitCommand } from './commands/init.js';
 import { runImportCommand } from './commands/import.js';
 import { runNewCommand } from './commands/new.js';
-import { fail } from './commands/output.js';
+import { fail, writeJson } from './commands/output.js';
 import { runPlanCommand } from './commands/plan.js';
+import { runPushCommand } from './commands/push.js';
 import { runReleaseCommand } from './commands/release.js';
 import { runRestoreCommand } from './commands/restore.js';
 import { runStatusCommand } from './commands/status.js';
@@ -40,7 +42,7 @@ Options
   --play-count N      check: plays per scenario when rendering (default from the rules)
   --verbose           check: also list rules the kit cannot apply locally
   --type game|block   new: the product type, instead of the first argument
-  --force             import: replace an existing product folder
+  --force             import: replace an existing product folder; capture: replace the listing images
   --port N            Preferred app port (default 5173, the next free one if taken)
   --no-open           Do not open the browser
   -h, --help          Show this help
@@ -52,7 +54,8 @@ errors or a command that cannot run.
 Environment
   NODE_EXTRA_CA_CERTS  The certificate authority of a corporate proxy that inspects HTTPS
 
-The kit only downloads the marketplace's public rules and the bundles you import. It never signs in or uploads.
+The kit downloads the marketplace's public rules and the bundles you import. It sends a product's files only
+through a sync link your AI requested with request_sync, holds no secret, and never signs in.
 Docs: https://marketplace.rafflex.io/docs/dev-kit.md`;
 
 /**
@@ -79,7 +82,7 @@ Docs: https://marketplace.rafflex.io/docs/dev-kit.md`;
  * @property {string} cwd
  * @property {NodeJS.WritableStream} stdout
  * @property {NodeJS.WritableStream} stderr
- * @property {NodeJS.ReadableStream} stdin   For commands that read a payload (synced).
+ * @property {NodeJS.ReadableStream} stdin   For commands that read a payload (synced without a sync link).
  * @property {CliOptions} options
  */
 
@@ -182,7 +185,7 @@ export function parseArguments(argv) {
         const command = commandNamed(positional[0]);
 
         if (command === undefined) {
-            throw new UsageError(`Unknown command ${positional[0]}.`);
+            throw new UsageError(`Unknown command ${positional[0]}. This kit may be older than the docs: run it as npx @rafflex/dev@latest ${positional[0]}.`);
         }
 
         options.command = command.name;
@@ -216,8 +219,8 @@ export function parseArguments(argv) {
             throw new UsageError('--yes only applies to restore.');
         }
 
-        if (options.force && options.command !== 'import') {
-            throw new UsageError('--force only applies to import.');
+        if (options.force && !['import', 'capture'].includes(options.command)) {
+            throw new UsageError('--force only applies to import and capture.');
         }
 
         if (options.type !== undefined && options.command !== 'new') {
@@ -269,7 +272,14 @@ export async function main(argv, io = {}) {
     try {
         options = parseArguments(argv);
     } catch (error) {
-        stderr.write(`${/** @type {Error} */ (error).message}\n\n${usage}\n`);
+        const message = /** @type {Error} */ (error).message;
+        const separator = argv.indexOf('--');
+
+        if ((separator === -1 ? argv : argv.slice(0, separator)).includes('--json')) {
+            writeJson(stdout, { error: { code: 'usage', message: `${message} Run npx @rafflex/dev --help for every command.` } });
+        } else {
+            stderr.write(`${message}\n\n${usage}\n`);
+        }
 
         return 2;
     }
@@ -300,6 +310,8 @@ export async function main(argv, io = {}) {
             return runCheckCommand(context);
         case 'test':
             return runTestCommand(context);
+        case 'capture':
+            return runCaptureCommand(context);
         case 'verify':
             return runVerifyCommand(context);
         case 'restore':
@@ -314,11 +326,13 @@ export async function main(argv, io = {}) {
             return runImportCommand(context);
         case 'plan':
             return runPlanCommand(context);
+        case 'push':
+            return runPushCommand(context);
         case 'synced':
             return runSyncedCommand(context);
         case 'release':
             return runReleaseCommand(context);
         default:
-            return fail(context, `Unknown command ${options.command}.`, 2);
+            return fail(context, `Unknown command ${options.command}. This kit may be older than the docs: run it as npx @rafflex/dev@latest ${options.command}.`, 2);
     }
 }

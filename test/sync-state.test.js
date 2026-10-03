@@ -37,7 +37,14 @@ describe('listing.md', () => {
     });
 
     test('refuses category ids that are not whole numbers', () => {
-        assert.throws(() => parseListing('---\ncategory_ids: [one]\n---\n'), ListingError);
+        assert.throws(() => parseListing('---\ncategory_ids: [2.5]\n---\n'), ListingError);
+        assert.throws(() => parseListing('---\ncategory_ids: [-3]\n---\n'), ListingError);
+    });
+
+    test('reads category names beside ids, under category_ids or categories', () => {
+        assert.deepEqual(parseListing('---\ncategory_ids: [3, "Instant win"]\n---\n').category_names, ['Instant win']);
+        assert.deepEqual(parseListing('---\ncategory_ids: [3, "Instant win"]\n---\n').category_ids, [3]);
+        assert.deepEqual(parseListing('---\ncategories:\n  - Arcade\n  - 12\n---\n'), { description: '', documentation: '', install_notes: '', video_url: '', category_ids: [12], tag_names: [], category_names: ['Arcade'] });
     });
 
     test('the canonical form sorts keys, ids, and tags and fills missing fields', () => {
@@ -54,6 +61,29 @@ describe('hashes', () => {
         assert.equal(optionOverridesHash(null), sha('{}'));
     });
 
+    test('options hash what the platform stores beside the template, so dropped entries never read as changed', () => {
+        const template = '<h1>{{ options.heading }}</h1><i style="color: {{ options.accent_colour }}"></i>{% for slide in options.slides %}{{ slide.title }}{% endfor %}{% for category in options.categories %}{{ category }}{% endfor %}\n';
+        const stored = { heading: { label: 'Title' }, accent_colour: { label: 'Accent' } };
+        const written = {
+            heading: { label: '  Title ' },
+            accent_colour: { label: 'Accent', choices: ['Red', 'Blue'] },
+            never_read: { label: 'Unused' },
+            'slides.title': { label: 'Slide title' },
+            categories: { label: 'Categories' },
+        };
+
+        assert.equal(optionOverridesHash(written, template, documents.contexts), optionOverridesHash(stored));
+        assert.notEqual(optionOverridesHash(written), optionOverridesHash(stored));
+        assert.equal(optionOverridesHash([{ label: 'A list' }], template, documents.contexts), optionOverridesHash({}));
+
+        const directory = temporaryProduct({ template, options: written });
+        const local = readLocalState(selectProduct(loadWorkspace(directory), undefined, directory), documents);
+        const remote = /** @type {any} */ ({ draft: { template_sha256: templateHash(template), option_overrides_sha256: optionOverridesHash(stored) }, listing_sha256: null, media: [] });
+
+        assert.equal(compareWithRemote(local, remote).options, false);
+        assert.deepEqual(local.options, { sha256: optionOverridesHash(stored), value: written });
+    });
+
     test('a template hashes as its exact text', () => {
         assert.equal(templateHash('<p>x</p>\n'), sha('<p>x</p>\n'));
     });
@@ -68,7 +98,7 @@ describe('hashes', () => {
 });
 
 describe('local changes against the remote snapshot', () => {
-    const template = '<p>{{ play_count }}</p>\n';
+    const template = '<p>{{ play_count }} {{ options.heading }}</p>\n';
     const directory = temporaryProduct({
         template,
         options: { heading: { label: 'Title' } },

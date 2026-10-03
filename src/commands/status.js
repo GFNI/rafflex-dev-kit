@@ -1,6 +1,9 @@
 import { refreshAgentsMarkdown, serverAgentsMarkdown } from '../agents-md.js';
+import { feedbackLines, productFeedback } from '../feedback.js';
 import { currentBranch, gitState } from '../git.js';
+import { planListingImagesFor } from '../push-plan.js';
 import { readCachedDocuments } from '../remote.js';
+import { submissionLines, submissionStatus } from '../submission.js';
 import { compareWithRemote, isRemoteStale, readLocalState } from '../sync-state.js';
 import { loadWorkspace, selectProducts } from '../workspace.js';
 import { fail, messageOf, writeJson } from './output.js';
@@ -27,13 +30,15 @@ function remoteSummary(remote) {
 
 /**
  * @param {import('../workspace.js').Product} product
- * @param {{rules?: any, libraries?: any}} documents
+ * @param {{rules?: any, libraries?: any, categories?: any}} documents
  * @param {string|null} [branch] The branch the workspace is on, to warn when the last sync was recorded on another.
  */
 export function productStatus(product, documents, branch = null) {
     const remote = product.manifest.remote;
     const local = readLocalState(product, documents);
     const changes = compareWithRemote(local, remote);
+    const listingImages = planListingImagesFor(local, remote);
+    const listingImagesChanged = listingImages.cover !== null || listingImages.screenshots.length > 0;
     /** @type {string[]} */
     const problems = [];
 
@@ -65,10 +70,13 @@ export function productStatus(product, documents, branch = null) {
                 changed: changes.assets.changed.map(({ path, tag }) => ({ path, tag })),
                 removed: changes.assets.removed,
             },
-            any: changes.any,
+            listing_images: { cover: listingImages.cover !== null, screenshots: listingImages.screenshots.length },
+            any: changes.any || listingImagesChanged,
         },
         problems,
         warnings: branchWarnings(remote, branch),
+        submission: submissionStatus(product, documents, local),
+        feedback: productFeedback(remote),
     };
 }
 
@@ -87,7 +95,7 @@ function branchWarnings(remote, branch) {
         return [];
     }
 
-    return [`The last sync was recorded on the ${syncedOn} branch, but the workspace is on ${branch}. Switch back before pushing, or read the product again with get_product and run synced.`];
+    return [`The last sync was recorded on the ${syncedOn} branch, but the workspace is on ${branch}. Switch back before pushing, or record the product again with request_sync and synced.`];
 }
 
 /**
@@ -99,7 +107,7 @@ function statusLines(status) {
     const { remote } = status;
 
     if (remote === null) {
-        lines.push(status.slug === null ? '  remote: not on the marketplace yet' : '  remote: never synced: read it with get_product and run synced before pushing');
+        lines.push(status.slug === null ? '  remote: not on the marketplace yet' : '  remote: never synced: record it with request_sync and synced, or push it');
     } else {
         const parts = [remote.status ?? 'unknown status', `live ${remote.live_version ?? 'none'}${remote.live_channel ? ` (${remote.live_channel})` : ''}`];
 
@@ -117,8 +125,10 @@ function statusLines(status) {
         lines.push(`  remote: ${parts.join(', ')}`);
 
         if (status.stale_remote) {
-            lines.push('  the remote snapshot is over a day old: read it again with get_product and run synced before pushing');
+            lines.push('  the remote snapshot is over a day old: push reads the marketplace first, or refresh it with request_sync and synced');
         }
+
+        lines.push(...feedbackLines(status.feedback));
     }
 
     const { changes } = status;
@@ -131,6 +141,10 @@ function statusLines(status) {
 
     if (assetParts.length > 0) {
         changed.push(`assets (${assetParts.join(', ')})`);
+    }
+
+    if (changes.listing_images.cover || changes.listing_images.screenshots > 0) {
+        changed.push('listing images');
     }
 
     if (remote === null) {
@@ -147,6 +161,8 @@ function statusLines(status) {
         lines.push(`  warning: ${warning}`);
     }
 
+    lines.push(...submissionLines(status.submission));
+
     return lines;
 }
 
@@ -160,7 +176,10 @@ function statusLines(status) {
  * network request status makes, and it falls back to the cache.
  *
  * JSON: `{workspace, git: {installed, repository, branch}, agents_md, products: [...]}`;
- * each product carries `warnings` (for example a sync recorded on another branch).
+ * each product carries `warnings` (for example a sync recorded on another
+ * branch) and `feedback`: the latest review with its notes and failing
+ * checks, the open bug report and unanswered question counts, and the
+ * headline statistics, as the last sync recorded them (null before any).
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -177,7 +196,7 @@ export async function runStatusCommand(context) {
         return fail(context, messageOf(error), 2);
     }
 
-    const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries']);
+    const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
     const state = gitState(workspace.root);
     const branch = state.repository ? currentBranch(workspace.root) : null;
     const git = { ...state, branch };

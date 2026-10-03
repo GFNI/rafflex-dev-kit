@@ -13,12 +13,12 @@
     "screenshot_urls": [],
     "categories": [
       {
-        "id": 7,
-        "name": "Arcade"
+        "id": 1,
+        "name": "Arcade Games"
       },
       {
-        "id": 3,
-        "name": "Wheels"
+        "id": 5,
+        "name": "Spin Games"
       }
     ],
     "tags": [
@@ -153,7 +153,7 @@
   "files": {
     "template.twig": "<div class=\"spin\">{{ options.heading }}</div>\n<img src=\"{{ files['background'] }}\" />\n",
     "options.json": "{\n  \"colour\": {\n    \"choices\": {\n      \"blue\": \"Blue\",\n      \"red\": \"Red\"\n    }\n  },\n  \"heading\": {\n    \"help\": \"Shown above the wheel\",\n    \"label\": \"Title\"\n  }\n}\n",
-    "listing.md": "---\ncategory_ids: [3, 7]\ntag_names: [\"arcade\", \"spin\"]\nvideo_url: \"https://video.example/spin\"\n---\n\n## Description\n\nSpin the wheel to win.\n\n## Documentation\n\nSet the colours in the options.\n\n## Tips\n\nKeep it short.\n\n## Install notes\n\n\n",
+    "listing.md": "---\ncategory_ids: [1, 5]\ntag_names: [\"arcade\", \"spin\"]\nvideo_url: \"https://video.example/spin\"\n---\n\n## Description\n\nSpin the wheel to win.\n\n## Documentation\n\nSet the colours in the options.\n\n## Tips\n\nKeep it short.\n\n## Install notes\n\n\n",
     "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\nAdds a blue wheel.\n\n## 1.2.0 (2026-09-01)\n\nFaster spins.\n\n## 1.0.0 (2026-06-01)\n\nFirst release.\n"
   },
   "media": [

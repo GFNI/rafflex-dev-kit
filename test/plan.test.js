@@ -14,6 +14,8 @@ import { fixtureDocuments, temporaryWorkspace } from './helpers/project.js';
 
 const sha = (/** @type {string|Buffer} */ data) => createHash('sha256').update(data).digest('hex');
 const documents = fixtureDocuments();
+const png = (/** @type {string} */ text) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(text)]);
+const starBytes = png('star bytes');
 
 describe('plan', () => {
     /** @type {Awaited<ReturnType<typeof startFixtureServer>>} */
@@ -42,7 +44,7 @@ describe('plan', () => {
         const template = `${readFileSync(join(directory, 'template.twig'), 'utf8')}<img src="{{ files['star'] }}">\n`;
 
         writeFileSync(join(directory, 'template.twig'), template);
-        writeFileSync(join(directory, 'assets', 'star.png'), 'star bytes');
+        writeFileSync(join(directory, 'assets', 'star.png'), starBytes);
 
         const { code, output: planned } = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
         const { ready, verify, ...output } = planned;
@@ -58,16 +60,27 @@ describe('plan', () => {
             template: { changed: true },
             options: { changed: false },
             listing: { changed: false },
-            assets: [{ path: 'assets/star.png', filename: 'star.png', tag: 'star', kind: 'image', size: 10, mime_type: 'image/png', sha256: sha('star bytes'), change: 'new' }],
+            assets: [{ path: 'assets/star.png', filename: 'star.png', tag: 'star', kind: 'image', size: 18, mime_type: 'image/png', sha256: sha(starBytes), change: 'new' }],
             removed_assets: [],
             release_notes: 'Adds a blue wheel.',
             version: '1.3.0',
+            listing_images: { cover: null, screenshots: [], removed_screenshots: [] },
+            refusals: [],
+            submission: {
+                ready: false,
+                missing: [
+                    { key: 'cover_image', message: 'Add a cover image before submitting for review.', fix: 'npx @rafflex/dev capture spin-to-win' },
+                    { key: 'screenshots', message: 'Add at least one screenshot before submitting for review.', fix: 'npx @rafflex/dev capture spin-to-win' },
+                ],
+            },
+            suggested_version: null,
         });
 
         const human = await run(['plan'], { cwd: directory, baseUrl: marketplace.baseUrl });
 
         assert.match(human.stdout, /1\. update_draft: template, version_number 1\.3\.0, base_revision 7, changelog from Unreleased/);
-        assert.match(human.stdout, /2\. request_media_upload: assets\/star\.png as star, image\/png, 10 bytes \(new\)/);
+        assert.match(human.stdout, /2\. request_media_upload: assets\/star\.png as star, image\/png, 18 bytes \(new\)/);
+        assert.match(human.stdout, /Before review \(a draft can be pushed without these\):\n {4}- Add a cover image before submitting for review\. Run npx @rafflex\/dev capture spin-to-win/);
         assert.match(human.stdout, /3\. get_product, then pipe it to npx @rafflex\/dev synced games\/spin-to-win/);
         assert.doesNotMatch(human.stdout, /update_product_details|create_product/);
 
@@ -79,7 +92,7 @@ describe('plan', () => {
         const pushed = {
             ...bundle.product,
             draft: { ...bundle.product.draft, template: formatted, revision: 9 },
-            media: [...bundle.product.media, { tag: 'star', filename: 'star.png', kind: 'image', mime_type: 'image/png', size_bytes: 10, sha256: sha('star bytes'), url: 'https://media.example/star.png', library: null }],
+            media: [...bundle.product.media, { tag: 'star', filename: 'star.png', kind: 'image', mime_type: 'image/png', size_bytes: 18, sha256: sha(starBytes), url: 'https://media.example/star.png', library: null }],
         };
         const synced = await runJson(['synced', 'spin-to-win'], { cwd: root, input: JSON.stringify({ structuredContent: pushed }) });
 
@@ -92,7 +105,7 @@ describe('plan', () => {
     });
 
     test('a product not on the marketplace yet plans everything, starting with create_product', async () => {
-        const root = temporaryWorkspace({ products: [{ title: 'Lucky Dip', assets: { 'prize.png': 'prize' }, changelog: '# Changelog\n\n## Unreleased\n\nFirst release.\n' }] });
+        const root = temporaryWorkspace({ products: [{ title: 'Lucky Dip', assets: { 'prize.png': png('prize') }, changelog: '# Changelog\n\n## Unreleased\n\nFirst release.\n' }] });
         const { output } = await runJson(['plan', 'lucky-dip'], { cwd: root, baseUrl: marketplace.baseUrl });
 
         assert.equal(output.slug, null);

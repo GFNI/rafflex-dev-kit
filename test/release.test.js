@@ -103,7 +103,8 @@ describe('release', () => {
         const { code, output } = await runJson(['release', 'spin-to-win'], { cwd: root });
 
         assert.equal(code, 1);
-        assert.match(output.error, /no notes under "## Unreleased"/);
+        assert.equal(output.error.code, 'no_notes');
+        assert.match(output.error.message, /no notes under "## Unreleased"/);
         assert.equal(readFileSync(join(root, 'games', 'spin-to-win', 'CHANGELOG.md'), 'utf8'), changelog);
     });
 

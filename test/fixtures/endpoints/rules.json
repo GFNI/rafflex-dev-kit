@@ -1,5 +1,5 @@
 {
-    "version": "25eb8113e2d6",
+    "version": "971e0e729152",
     "sandbox": {
         "tags": [
             "if",
@@ -473,6 +473,15 @@
             "flags": "",
             "js_compatible": true
         },
+        "filename_pattern": {
+            "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+            "flags": "",
+            "js_compatible": true
+        },
+        "max_filename_length": 255,
+        "library_capacity_bytes": 26214400,
+        "max_files_per_batch": 10,
+        "max_description_length": 160,
         "refusals": {
             "blend": "Browsers cannot load .blend files. Export from Blender as .glb (File > Export > glTF 2.0, format glTF Binary).",
             "gltf": "Upload a single .glb instead: .gltf files reference separate files the files map cannot express.",
@@ -486,7 +495,10 @@
             "invalid_model": ":filename is not a valid .glb file. Export it from Blender as glTF 2.0, format glTF Binary.",
             "compressed_model": "Compressed models need decoders the platform does not ship yet. Export without Draco, KTX2, or meshopt compression.",
             "unapproved_library": "This file is not an approved library. Put your own code in the template, or email support@rafflex.io to request a library.",
-            "invalid_tag": "Tags use lowercase letters, numbers, and hyphens only."
+            "invalid_tag": "Tags use lowercase letters, numbers, and hyphens only.",
+            "invalid_filename": "Use letters, numbers, dots, hyphens, and underscores only in file names.",
+            "over_capacity": "This media library is full (maximum 25 MB).",
+            "locked": ":filename is referenced by a submitted or published version and cannot be overwritten. Upload it under a new name."
         }
     },
     "preview_csp": {
@@ -533,5 +545,119 @@
         "base-uri": [
             "'none'"
         ]
+    },
+    "listing": {
+        "limits": {
+            "title": 120,
+            "description": 5000,
+            "documentation": 65000,
+            "install_notes": 5000,
+            "video_url": 255,
+            "max_tags": 10,
+            "tag_name": 50
+        },
+        "images": {
+            "cover": {
+                "max_bytes": 2097152,
+                "extensions": [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif",
+                    "bmp",
+                    "webp",
+                    "avif",
+                    "heic",
+                    "heif"
+                ],
+                "mime_types": [
+                    "image/jpeg",
+                    "image/pjpeg",
+                    "image/png",
+                    "image/apng",
+                    "image/vnd.mozilla.apng",
+                    "image/gif",
+                    "image/bmp",
+                    "image/x-bmp",
+                    "image/x-ms-bmp",
+                    "image/webp",
+                    "image/avif",
+                    "image/avif-sequence",
+                    "image/heic",
+                    "image/heic-sequence",
+                    "image/heif",
+                    "image/heif-sequence"
+                ]
+            },
+            "screenshot": {
+                "max_bytes": 2097152,
+                "extensions": [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif",
+                    "bmp",
+                    "webp",
+                    "avif",
+                    "heic",
+                    "heif"
+                ],
+                "mime_types": [
+                    "image/jpeg",
+                    "image/pjpeg",
+                    "image/png",
+                    "image/apng",
+                    "image/vnd.mozilla.apng",
+                    "image/gif",
+                    "image/bmp",
+                    "image/x-bmp",
+                    "image/x-ms-bmp",
+                    "image/webp",
+                    "image/avif",
+                    "image/avif-sequence",
+                    "image/heic",
+                    "image/heic-sequence",
+                    "image/heif",
+                    "image/heif-sequence"
+                ],
+                "max_count": 6
+            }
+        }
+    },
+    "submission": {
+        "requirements": [
+            {
+                "key": "description",
+                "applies": "always",
+                "message": "Add a description before submitting for review."
+            },
+            {
+                "key": "categories",
+                "applies": "always",
+                "message": "Choose at least one category before submitting for review."
+            },
+            {
+                "key": "cover_image",
+                "applies": "always",
+                "message": "Add a cover image before submitting for review."
+            },
+            {
+                "key": "screenshots",
+                "applies": "always",
+                "message": "Add at least one screenshot before submitting for review."
+            },
+            {
+                "key": "changelog",
+                "applies": "update",
+                "message": "Release notes are required when publishing a new version."
+            }
+        ]
+    },
+    "option_overrides": {
+        "max_label_length": 60,
+        "max_help_length": 200,
+        "max_choices": 20,
+        "max_choices_length": 2000,
+        "violation_message": "In the option labels: :violation"
     }
 }

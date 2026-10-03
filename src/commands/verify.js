@@ -1,7 +1,10 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isBlocking, verdictNote } from '../checker.js';
-import { resultsDirectoryName } from '../workspace.js';
+import { submissionLines, submissionStatus } from '../submission.js';
+import { kitVersion } from '../version.js';
+import { productFilename, resultsDirectoryName } from '../workspace.js';
 import { checkProduct } from './check.js';
 import { formatProduct, loadSelection } from './format.js';
 import { messageOf, writeJson } from './output.js';
@@ -18,6 +21,7 @@ import { testLines, testProducts } from './test.js';
  * @property {(import('../checker.js').Issue & {screenshot?: string})[]} issues Every check and test issue.
  * @property {number} blocking          How many issues block.
  * @property {number} warnings          How many issues are warnings.
+ * @property {import('../submission.js').SubmissionStatus} submission What review still needs; never changes `ready`.
  * @property {string} note
  */
 
@@ -33,7 +37,7 @@ import { testLines, testProducts } from './test.js';
  * @returns {Promise<VerifyResult[]>}
  */
 export async function verifyProducts({ workspace, loaded, products, onProgress = () => {} }) {
-    /** @type {{format: import('./format.js').FormatResult, check: import('./check.js').ProductCheck}[]} */
+    /** @type {{format: import('./format.js').FormatResult, check: import('./check.js').ProductCheck, submission: import('../submission.js').SubmissionStatus}[]} */
     const staged = [];
 
     for (const product of products) {
@@ -42,13 +46,13 @@ export async function verifyProducts({ workspace, loaded, products, onProgress =
         onProgress(`Checking ${product.path} in every scenario`);
         const { result: check } = await checkProduct(product, loaded, undefined);
 
-        staged.push({ format, check });
+        staged.push({ format, check, submission: submissionFor(product, loaded.documents) });
     }
 
     onProgress('Running the browser tests');
     const tests = await testProducts({ workspace, loaded, products });
 
-    return staged.map(({ format, check }, index) => {
+    return staged.map(({ format, check, submission }, index) => {
         const test = tests[index];
         const issues = [...check.issues, ...test.issues];
         const blocking = issues.filter(isBlocking).length;
@@ -63,9 +67,26 @@ export async function verifyProducts({ workspace, loaded, products, onProgress =
             issues,
             blocking,
             warnings: issues.length - blocking,
+            submission,
             note: verdictNote,
         };
     });
+}
+
+/**
+ * What review still needs, or nothing to report when the product's files
+ * cannot be read (the check reports that).
+ *
+ * @param {import('../workspace.js').Product} product
+ * @param {Record<string, any>} documents
+ * @returns {import('../submission.js').SubmissionStatus}
+ */
+function submissionFor(product, documents) {
+    try {
+        return submissionStatus(product, documents);
+    } catch {
+        return { ready: true, missing: [] };
+    }
 }
 
 /**
@@ -93,23 +114,82 @@ function verifyLines(result) {
 
     lines.push(...testLines(result.test).map((line, index) => (index === 0 ? `  test: ${line.replace(`${result.product}: `, '')}` : `  ${line}`)));
     lines.push(`  ${result.blocking} blocking, ${result.warnings} ${result.warnings === 1 ? 'warning' : 'warnings'}.`);
+    lines.push(...submissionLines(result.submission));
 
     return lines;
 }
 
 /**
+ * A fingerprint of everything in a product folder a verify result depends
+ * on: the path and SHA-256 of every file, except the kit's own output
+ * (`.results/`) and product.json (rewritten with the marketplace's state).
+ * An added, changed, or deleted file at any depth changes it.
+ *
+ * @param {string} directory
+ * @returns {string}
+ */
+export function productFilesFingerprint(directory) {
+    const hash = createHash('sha256');
+    const walk = (/** @type {string} */ folder, /** @type {string} */ prefix) => {
+        const entries = readdirSync(folder, { withFileTypes: true }).sort((first, second) => (first.name < second.name ? -1 : 1));
+
+        for (const entry of entries) {
+            if (prefix === '' && (entry.name === resultsDirectoryName || entry.name === productFilename)) {
+                continue;
+            }
+
+            const path = join(folder, entry.name);
+            const name = `${prefix}${entry.name}`;
+
+            if (entry.isDirectory()) {
+                walk(path, `${name}/`);
+                continue;
+            }
+
+            hash.update(`${name}\0`);
+            hash.update(entry.isFile() ? createHash('sha256').update(readFileSync(path)).digest('hex') : 'not a file');
+            hash.update('\0');
+        }
+    };
+
+    walk(directory, '');
+
+    return hash.digest('hex');
+}
+
+/**
+ * The version of everything a verify was judged by: this kit and each of
+ * the platform's documents it loaded. A rule change on the platform, or a
+ * kit update, makes a saved result stale.
+ *
+ * @param {{documents?: Record<string, any>}|null|undefined} loaded
+ * @returns {string}
+ */
+export function rulesFingerprint(loaded) {
+    const documents = loaded?.documents ?? {};
+    const versions = Object.keys(documents).sort().map((name) => `${name}=${documents[name]?.version ?? 'none'}`);
+
+    return [`kit=${kitVersion}`, ...versions].join(';');
+}
+
+/**
  * Keep the full result in the product's .results/verify.json, so the
- * Rafflex app shows a verify the AI ran in its terminal (PRD 42).
+ * Rafflex app shows a verify the AI ran in its terminal (PRD 42), with
+ * what it was judged against (`verified_against`: the folder's files and
+ * the rules), so push reuses it only while both are unchanged.
  *
  * @param {import('../workspace.js').Product} product
  * @param {VerifyResult} result
+ * @param {{documents?: Record<string, any>}} [loaded] The documents the verify used; without them the result is never reused.
  */
-export function saveVerifyResult(product, result) {
+export function saveVerifyResult(product, result, loaded) {
     const directory = join(product.directory, resultsDirectoryName);
 
     try {
+        const verifiedAgainst = loaded === undefined ? null : { files: productFilesFingerprint(product.directory), rules: rulesFingerprint(loaded) };
+
         mkdirSync(directory, { recursive: true });
-        writeFileSync(join(directory, 'verify.json'), `${JSON.stringify(result, null, 2)}\n`);
+        writeFileSync(join(directory, 'verify.json'), `${JSON.stringify({ ...result, verified_against: verifiedAgainst }, null, 2)}\n`);
     } catch {
         // A read only folder keeps the result in the output only.
     }
@@ -158,7 +238,7 @@ export async function runVerifyCommand(context) {
     const ready = results.every((result) => result.ready);
 
     for (const [index, result] of results.entries()) {
-        saveVerifyResult(selection.products[index], result);
+        saveVerifyResult(selection.products[index], result, selection.loaded);
     }
 
     if (options.json) {

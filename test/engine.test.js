@@ -143,6 +143,57 @@ describe('platform Twig behaviour', () => {
     });
 });
 
+describe('platform failures the preview reproduces', () => {
+    const failure = (/** @type {string} */ template, /** @type {Record<string, unknown>} */ context = {}) => {
+        try {
+            renderTemplate(template, context, sandbox);
+
+            return null;
+        } catch (error) {
+            return String(/** @type {Error} */ (error).message).replace(/ in "template\.twig" at line \d+\.$/, '');
+        }
+    };
+
+    test('division and modulo by zero fail, as they do on the platform', () => {
+        assert.equal(failure('{{ 10 / options.columns }}', { options: { columns: 0 } }), 'Division by zero');
+        assert.equal(failure('{{ 10 // 0 }}'), 'Division by zero');
+        assert.equal(failure('{{ 0 / 0 }}'), 'Division by zero');
+        assert.equal(failure('{{ 7 % 0 }}'), 'Modulo by zero');
+        assert.equal(failure('{{ 7 % 0.5 }}'), 'Modulo by zero');
+        assert.equal(failure('{{ 10 / options.columns }}', { options: { columns: 4 } }), null);
+    });
+
+    test('arithmetic on text with no leading number fails, as it does on the platform', () => {
+        assert.equal(failure("{{ '' + 1 }}"), 'Unsupported operand types: string + int');
+        assert.equal(failure("{{ 1 + 'abc' }}"), 'Unsupported operand types: int + string');
+        assert.equal(failure("{{ 'abc' * 2 }}"), 'Unsupported operand types: string * int');
+        assert.equal(failure("{{ '5 apples' + 1 }}"), 'A non-numeric value encountered');
+        assert.equal(failure("{{ ' 5' + 1 }}"), null);
+    });
+
+    test('date fails on text the platform cannot read as a time, and reads what it can', () => {
+        const message = (/** @type {string} */ text, /** @type {number} */ position) => `Failed to parse time string (${text}) at position ${position} (${text[position]}): The timezone could not be found in the database`;
+
+        for (const [text, position] of /** @type {[string, number][]} */ ([['23 hours from now', 9], ['Ends soon', 0], ['in 2 days', 0], ['December 24 at 8pm', 12], ['2026-12-24 at 20:00', 11], ['TBC', 0], ['Sold out', 0], ['3 days left', 7], ['the 24th', 0], ['monday foo', 7], ['A much longer value', 7]])) {
+            assert.equal(failure('{{ value|date("j M") }}', { value: text }), message(text, position), text);
+        }
+
+        for (const text of ['now', 'today', 'tomorrow', '+1 day', '2 days ago', 'next friday 8pm', 'last day of next month', 'noon tomorrow', 'Saturday 8pm', '24th December 2026', 'Dec 24 2026 10pm AEST', 'tomorrow 20:00 BST', 'Monday next week', '1 fortnight ago', 'PST', 'a', 'A much', 'PST foo', '8pm a foo', 'Europe/London', 'first monday of january', '', '1700000000']) {
+            assert.equal(failure('{{ value|date("j M") }}', { value: text }), null, text);
+        }
+
+        assert.equal(renderTemplate('{% for competition in competitions %}{{ competition.end_date|date("j M") }}{% endfor %}', { competitions: [{ end_date: '2026-12-24 20:00:00' }] }, sandbox), '24 Dec');
+    });
+
+    test('number_format takes any number of decimals, as the platform does', () => {
+        const printed = renderTemplate('{{ 3.14159|number_format(options.decimals|default(2)) }}', { options: { decimals: 1000000 } }, sandbox);
+
+        assert.equal(printed.length, 1000002);
+        assert.ok(printed.startsWith('3.141589999999999882618340052431449294090270996093750000'));
+        assert.match(printed, /0{1000}$/);
+    });
+});
+
 describe('json filter', () => {
     // Expected strings are the platform's json filter output.
     test('escapes slashes, HTML significant characters, and non ASCII', () => {

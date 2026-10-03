@@ -34,7 +34,10 @@ export const listingSections = /** @type {const} */ ([
 ]);
 
 /**
- * @typedef {{description: string, documentation: string, install_notes: string, video_url: string, category_ids: number[], tag_names: string[]}} ListingFields
+ * @typedef {{description: string, documentation: string, install_notes: string, video_url: string, category_ids: number[], tag_names: string[], category_names?: string[]}} ListingFields
+ *
+ * `category_names` holds the categories listing.md names rather than
+ * numbers, until resolveListingCategories turns them into ids.
  */
 
 export class ListingError extends Error {
@@ -225,15 +228,35 @@ export function parseListing(text) {
     const { data, body } = splitFrontmatter(text);
     const fields = emptyListing();
 
-    fields.category_ids = asList(data.category_ids, 'category_ids').map((value) => {
-        const id = Number(value);
+    const categoryKey = data.category_ids === undefined && data.categories !== undefined ? 'categories' : 'category_ids';
+    /** @type {string[]} */
+    const categoryNames = [];
 
-        if (!Number.isInteger(id) || id < 0 || String(value).trim() === '') {
-            throw new ListingError(`listing.md's category_ids must be whole numbers; "${value}" is not.`);
+    fields.category_ids = [];
+
+    for (const value of asList(data[categoryKey], categoryKey)) {
+        const text = String(value).trim();
+
+        if (text === '') {
+            throw new ListingError(`listing.md's ${categoryKey} has an empty entry. Use category names or ids.`);
         }
 
-        return id;
-    });
+        if (/^\d+$/.test(text)) {
+            fields.category_ids.push(Number(text));
+            continue;
+        }
+
+        if (/^[-+]?[\d.,]+$/.test(text)) {
+            throw new ListingError(`listing.md's ${categoryKey} must be category names or whole number ids; "${value}" is neither.`);
+        }
+
+        categoryNames.push(text);
+    }
+
+    if (categoryNames.length > 0) {
+        fields.category_names = categoryNames;
+    }
+
     fields.tag_names = asList(data.tag_names, 'tag_names').map(String);
 
     if (Array.isArray(data.video_url)) {
@@ -266,6 +289,63 @@ export function parseListing(text) {
     });
 
     return fields;
+}
+
+/**
+ * @typedef {{id: number, name: string, slug?: string}} Category
+ */
+
+/**
+ * Turn the category names listing.md uses into ids, case insensitively by
+ * name (or slug), through the marketplace's categories.json. Ids pass
+ * through. Without the category list (an older marketplace, or offline
+ * with nothing cached) names cannot be resolved: they are returned in
+ * `unresolved` and the ids are left as they are.
+ *
+ * `unknown` lists every name and id the category list does not hold.
+ *
+ * @param {ListingFields} fields
+ * @param {{categories?: Category[]}|null|undefined} categoriesDocument
+ * @returns {{fields: ListingFields, unknown: string[], unresolved: string[], categories: Category[]|null}}
+ */
+export function resolveListingCategories(fields, categoriesDocument) {
+    const { category_names: names = [], ...rest } = fields;
+    const categories = Array.isArray(categoriesDocument?.categories)
+        ? categoriesDocument.categories.filter((category) => Number.isInteger(category?.id) && typeof category?.name === 'string')
+        : null;
+
+    if (categories === null) {
+        return { fields: { ...rest, category_ids: [...fields.category_ids] }, unknown: [], unresolved: [...names], categories: null };
+    }
+
+    /** @type {number[]} */
+    const ids = [];
+    /** @type {string[]} */
+    const unknown = [];
+
+    for (const id of fields.category_ids) {
+        if (!categories.some((category) => category.id === id)) {
+            unknown.push(String(id));
+        }
+
+        ids.push(id);
+    }
+
+    for (const name of names) {
+        const wanted = name.toLowerCase();
+        const match = categories.find((category) => category.name.toLowerCase() === wanted || String(category.slug ?? '').toLowerCase() === wanted);
+
+        if (match === undefined) {
+            unknown.push(name);
+            continue;
+        }
+
+        if (!ids.includes(match.id)) {
+            ids.push(match.id);
+        }
+    }
+
+    return { fields: { ...rest, category_ids: ids }, unknown, unresolved: [], categories };
 }
 
 /**
@@ -311,25 +391,80 @@ export function sortedJson(value) {
     });
 }
 
+/** Letters the platform spells out in ASCII that Unicode does not decompose. */
+const asciiLetters = /** @type {Record<string, string>} */ ({ ß: 'ss', æ: 'ae', Æ: 'AE', ø: 'o', Ø: 'O', œ: 'oe', Œ: 'OE', đ: 'd', Đ: 'D', ł: 'l', Ł: 'L', þ: 'th', Þ: 'TH', ð: 'd', Ð: 'D' });
+
+/**
+ * A tag name as the platform keys it: tags are matched by this slug, so
+ * "Wheel", "wheel" and "WHEEL " are one tag, stored under the spelling it
+ * was first created with. Letters are spelled in ASCII, underscores and
+ * whitespace become single hyphens, `@` becomes "at", and anything that is
+ * not a letter, number, or hyphen is dropped.
+ *
+ * @param {string} name
+ */
+export function tagSlug(name) {
+    return name
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[ßæÆøØœŒđĐłŁþÞðÐ]/g, (letter) => asciiLetters[letter])
+        .replace(/_+/g, '-')
+        .replaceAll('@', '-at-')
+        .toLowerCase()
+        .replace(/[^-\p{L}\p{N}\s]+/gu, '')
+        .replace(/[-\s]+/gu, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * The tags a listing ends up with on the platform, as slugs: each name
+ * trimmed, empty names (and "0") dropped, then de-duplicated by slug. The
+ * platform keeps no order for tags, so the result is sorted.
+ *
+ * @param {unknown[]} names
+ * @returns {string[]}
+ */
+export function canonicalTagSlugs(names) {
+    const kept = names.map((name) => String(name).trim()).filter((name) => name !== '' && name !== '0');
+
+    return [...new Set(kept.map(tagSlug))].sort();
+}
+
+/**
+ * Tag names as the creator wrote them, for comparing with the names a
+ * push sent: each trimmed, empty names (and "0") dropped, de-duplicated,
+ * and sorted (the platform keeps no order for tags).
+ *
+ * @param {unknown[]} names
+ * @returns {string[]}
+ */
+export function canonicalTagNames(names) {
+    return [...new Set(names.map((name) => String(name).trim()).filter((name) => name !== '' && name !== '0'))].sort();
+}
+
 /**
  * The canonical listing used for hashing: sorted key JSON of the six
- * fields, with category ids and tag names sorted, missing values empty,
- * and the three long text fields trimmed. Trimming both sides keeps the
- * hash of a parsed listing.md equal to the hash of the server's fields,
+ * fields, with category ids de-duplicated and sorted, tags compared as the
+ * platform matches them (canonicalTagSlugs, so a tag the platform answers
+ * with another spelling is the same tag) or, with `tagsBy` "names", as
+ * the creator wrote them (canonicalTagNames), missing values empty, and
+ * the three long text fields trimmed. Trimming both sides keeps the hash
+ * of a parsed listing.md equal to the hash of the server's fields,
  * whatever blank lines surround a body.
  *
  * @param {Partial<ListingFields>|null|undefined} listing
+ * @param {'slugs'|'names'} [tagsBy]
  * @returns {string}
  */
-export function canonicalListing(listing) {
+export function canonicalListing(listing, tagsBy = 'slugs') {
     const fields = { ...emptyListing(), ...(listing ?? {}) };
 
     return sortedJson({
-        category_ids: [...(fields.category_ids ?? [])].map(Number).sort((first, second) => first - second),
+        category_ids: [...new Set((fields.category_ids ?? []).map(Number))].sort((first, second) => first - second),
         description: String(fields.description ?? '').trim(),
         documentation: String(fields.documentation ?? '').trim(),
         install_notes: String(fields.install_notes ?? '').trim(),
-        tag_names: [...(fields.tag_names ?? [])].map(String).sort(),
+        tag_names: tagsBy === 'names' ? canonicalTagNames(fields.tag_names ?? []) : canonicalTagSlugs(fields.tag_names ?? []),
         video_url: fields.video_url ?? '',
     });
 }

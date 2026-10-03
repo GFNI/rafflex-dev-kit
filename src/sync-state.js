@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { scanAssets } from './assets.js';
-import { canonicalListing, parseListing, sortedJson } from './listing.js';
+import { isRemoteFile, recordedMedia, scanAssets } from './assets.js';
+import { canonicalListing, canonicalTagNames, canonicalTagSlugs, parseListing, resolveListingCategories, sortedJson } from './listing.js';
+import { readListingImages, remoteListingImagesFrom } from './listing-images.js';
+import { normaliseOverrideText, storedOverrides } from './options/overrides.js';
 import { readTemplate } from './workspace.js';
 
 /**
@@ -12,9 +14,16 @@ import { readTemplate } from './workspace.js';
  * hash the same way:
  *
  * - template: sha256 of the template text
- * - options: sha256 of sorted key JSON of the option overrides
+ * - options: sha256 of sorted key JSON of the option overrides as the
+ *   platform stores them, filtered against the template they sit beside
+ *   (keys it does not read, choices on a field that cannot take them,
+ *   child keys such as slides.title, and categories dropped): options.json
+ *   against the local template, the draft's overrides against the draft's
+ *   template. The live version's overrides, recorded without their
+ *   template, are taken as the platform stored them
  * - listing: sha256 of the canonical listing (see listing.js)
- * - assets: sha256 of each file, compared with remote.media by tag, except
+ * - assets: sha256 of each file, compared with the remote.media entry of the
+ *   same file name (or the name import gave it), except
  *   approved libraries, which match by hash and then library name (a
  *   library attached under a custom tag is still the same library)
  */
@@ -74,17 +83,31 @@ export function templateHash(template) {
 }
 
 /**
+ * The hash of option overrides as the platform stores them. With the
+ * template they will be stored beside, entries the platform drops are
+ * left out first, so options.json with an entry for a key the template
+ * does not read hashes the same as what the platform sends back after the
+ * push (otherwise every plan would report the options changed, and every
+ * push would resend them). Both sides are filtered with the kit's own
+ * inference, so they agree even where it reads a field differently.
+ * Without a template only the template independent normalisation applies.
+ *
  * @param {unknown} overrides
+ * @param {string|null} [template]
+ * @param {any} [contexts]
  */
-export function optionOverridesHash(overrides) {
-    return sha256(sortedJson(normaliseOptionOverrides(overrides)));
+export function optionOverridesHash(overrides, template = null, contexts = undefined) {
+    const value = normaliseOptionOverrides(overrides);
+
+    return sha256(sortedJson(template === null ? normaliseOverrideText(value) : storedOverrides(value, template, contexts)));
 }
 
 /**
  * @param {Partial<import('./listing.js').ListingFields>|null|undefined} listing
+ * @param {'slugs'|'names'} [tagsBy] How tags compare (see canonicalListing).
  */
-export function listingHash(listing) {
-    return sha256(canonicalListing(listing));
+export function listingHash(listing, tagsBy = 'slugs') {
+    return sha256(canonicalListing(listing, tagsBy));
 }
 
 /**
@@ -105,9 +128,15 @@ export function isRemoteStale(remote, now = Date.now()) {
  * @typedef {object} LocalState
  * @property {{sha256: string, text: string}|null} template   null when template.twig is missing.
  * @property {{sha256: string, value: Record<string, any>}|{error: string}} options
- * @property {{sha256: string, fields: import('./listing.js').ListingFields}|{error: string}} listing
+ * @property {{sha256: string, names_sha256: string, fields: import('./listing.js').ListingFields, unknown_categories: string[], unresolved_categories: string[]}|{error: string}} listing
+ *   `names_sha256` compares tags as written, for a remote state that
+ *   records the names behind the marketplace's tags (`listing_tag_names`).
+ *   Category names are resolved to ids through categories.json; names it
+ *   does not hold are `unknown_categories`, and names that could not be
+ *   looked up (no category list) are `unresolved_categories`.
  * @property {LocalAsset[]} assets
  * @property {import('./assets.js').AssetRefusal[]} refusals
+ * @property {import('./listing-images.js').LocalListingImages} listing_images
  */
 
 /**
@@ -117,7 +146,7 @@ export function isRemoteStale(remote, now = Date.now()) {
  * its filename.
  *
  * @param {import('./workspace.js').Product} product
- * @param {{rules?: any, libraries?: any}|null} [documents]
+ * @param {{rules?: any, libraries?: any, categories?: any}|null} [documents]
  * @returns {LocalState}
  */
 export function readLocalState(product, documents = null) {
@@ -138,11 +167,16 @@ export function readLocalState(product, documents = null) {
     try {
         const value = existsSync(product.optionsPath) ? JSON.parse(readFileSync(product.optionsPath, 'utf8')) : {};
 
-        if (value !== null && (typeof value !== 'object' || (Array.isArray(value) && value.length > 0))) {
+        // A list is taken as the platform takes it (an object keyed by
+        // index, whose keys no template reads); check warns about it.
+        if (value !== null && typeof value !== 'object') {
             throw new Error('it must be a JSON object');
         }
 
-        options = { sha256: optionOverridesHash(value), value: normaliseOptionOverrides(value) };
+        // Filtered with the kit's own inference rules, never the published
+        // ones: the recorded remote hashes (remoteFromProduct) are made
+        // without them, and both sides must filter alike to compare.
+        options = { sha256: optionOverridesHash(value, template?.text ?? null), value: normaliseOptionOverrides(value) };
     } catch (error) {
         options = { error: `options.json cannot be read: ${/** @type {Error} */ (error).message}` };
     }
@@ -151,15 +185,25 @@ export function readLocalState(product, documents = null) {
     let listing;
 
     try {
-        const fields = parseListing(existsSync(product.listingPath) ? readFileSync(product.listingPath, 'utf8') : '');
+        const parsed = parseListing(existsSync(product.listingPath) ? readFileSync(product.listingPath, 'utf8') : '');
+        const resolved = resolveListingCategories(parsed, documents?.categories);
+        const unsettled = [...resolved.unknown.filter((entry) => !/^\d+$/.test(entry)), ...resolved.unresolved];
 
-        listing = { sha256: listingHash(fields), fields };
+        // Names that resolved to nothing are part of the hash, so such a
+        // listing never reads as unchanged; check blocks it anyway.
+        listing = {
+            sha256: unsettled.length === 0 ? listingHash(resolved.fields) : sha256(`${canonicalListing(resolved.fields)}\n${unsettled.join('\n')}`),
+            names_sha256: unsettled.length === 0 ? listingHash(resolved.fields, 'names') : sha256(`${canonicalListing(resolved.fields, 'names')}\n${unsettled.join('\n')}`),
+            fields: resolved.fields,
+            unknown_categories: resolved.unknown,
+            unresolved_categories: resolved.unresolved,
+        };
     } catch (error) {
         listing = { error: /** @type {Error} */ (error).message };
     }
 
     const rules = documents?.rules?.upload_rules ? documents.rules : fallbackRules;
-    const scan = scanAssets(product.assetsDirectory, rules, documents?.libraries?.libraries ?? [], (path) => path);
+    const scan = scanAssets(product.assetsDirectory, rules, documents?.libraries?.libraries ?? [], (path) => path, recordedMedia(product));
     const assets = scan.assets.map((asset) => ({
         path: `assets/${asset.path}`,
         filename: asset.filename,
@@ -171,7 +215,7 @@ export function readLocalState(product, documents = null) {
         library: asset.library?.name ?? null,
     }));
 
-    return { template, options, listing, assets, refusals: scan.refusals };
+    return { template, options, listing, assets, refusals: scan.refusals, listing_images: readListingImages(product.directory) };
 }
 
 /**
@@ -203,7 +247,8 @@ export function compareWithRemote(local, remote) {
     const baseline = baselineOf(remote);
     const template = local.template === null || typeof baseline?.template_sha256 !== 'string' || local.template.sha256 !== baseline.template_sha256;
     const options = !('sha256' in local.options) || typeof baseline?.option_overrides_sha256 !== 'string' || local.options.sha256 !== baseline.option_overrides_sha256;
-    const listing = !('sha256' in local.listing) || local.listing.sha256 !== remote?.listing_sha256;
+    const tagsAsWritten = Array.isArray(/** @type {any} */ (remote)?.listing_tag_names);
+    const listing = !('sha256' in local.listing) || (tagsAsWritten ? local.listing.names_sha256 : local.listing.sha256) !== remote?.listing_sha256;
     const remoteMedia = Array.isArray(remote?.media) ? remote.media : [];
     /** @type {Set<import('./workspace.js').ProductRemote['media'][number]>} */
     const claimed = new Set();
@@ -231,7 +276,10 @@ export function compareWithRemote(local, remote) {
     }
 
     for (const asset of local.assets.filter((candidate) => candidate.library === null)) {
-        const remoteEntry = remoteMedia.find((entry) => !claimed.has(entry) && entry.tag === asset.tag);
+        // The same file is the one under the same name (or the name import
+        // gave it), which is also where its tag came from (scanAssets).
+        const remoteEntry = remoteMedia.find((entry) => !claimed.has(entry) && entry.filename === asset.filename)
+            ?? remoteMedia.find((entry) => !claimed.has(entry) && isRemoteFile(entry, asset.filename));
 
         if (remoteEntry === undefined) {
             assets.new.push(asset);
@@ -358,6 +406,83 @@ export function latestReleasedVersion(product) {
 }
 
 /**
+ * The tag names, as the creator wrote them in listing.md, behind the
+ * marketplace's tags at this moment, or null when the kit cannot say
+ * (then tags compare by slug). The platform keys a tag by a slug the kit
+ * does not reproduce for every script (a CJK or emoji only tag has an
+ * empty one there), so comparing slugs could show such a listing as
+ * changed forever. Taken from, in turn:
+ *
+ * - `sent`: the names a push just sent, which produced the marketplace's tags;
+ * - the previous record, while the marketplace still holds the tags it
+ *   held when that record was made;
+ * - `local`: listing.md's names, when they match the marketplace's tags by slug.
+ *
+ * @param {Record<string, any>} payload The product as the marketplace answered.
+ * @param {{previous?: Record<string, any>|null, sent?: unknown[], local?: unknown[]|null}} sources
+ * @returns {string[]|null}
+ */
+export function listingTagNamesFor(payload, { previous = null, sent, local = null }) {
+    const marketplace = canonicalTagNames(listingFromProduct(payload).tag_names);
+
+    if (Array.isArray(sent)) {
+        return canonicalTagNames(sent);
+    }
+
+    if (Array.isArray(previous?.listing_tag_names) && Array.isArray(previous?.listing_marketplace_tags)
+        && sortedJson(canonicalTagNames(previous.listing_marketplace_tags)) === sortedJson(marketplace)) {
+        return canonicalTagNames(previous.listing_tag_names);
+    }
+
+    if (Array.isArray(local) && sortedJson(canonicalTagSlugs(local)) === sortedJson(canonicalTagSlugs(marketplace))) {
+        return canonicalTagNames(local);
+    }
+
+    return null;
+}
+
+/**
+ * A remote block with the tag names behind the marketplace's tags
+ * recorded (`listing_tag_names`, and the marketplace's own names in
+ * `listing_marketplace_tags`), its listing hash then made with those
+ * names compared as written. Unchanged when `names` is null.
+ *
+ * @template {Record<string, any>} T
+ * @param {T} remote
+ * @param {Record<string, any>} payload
+ * @param {string[]|null} names
+ * @returns {T}
+ */
+export function withListingTagNames(remote, payload, names) {
+    if (names === null) {
+        return remote;
+    }
+
+    const fields = listingFromProduct(payload);
+
+    return {
+        ...remote,
+        listing_sha256: listingHash({ ...fields, tag_names: names }, 'names'),
+        listing_tag_names: names,
+        listing_marketplace_tags: canonicalTagNames(fields.tag_names),
+    };
+}
+
+/**
+ * listing.md's tag names, or null when it cannot be read.
+ *
+ * @param {{listingPath: string}} product
+ * @returns {string[]|null}
+ */
+export function localTagNames(product) {
+    try {
+        return existsSync(product.listingPath) ? parseListing(readFileSync(product.listingPath, 'utf8')).tag_names : [];
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Map a get_product result to product.json's `remote` block: the server's
  * state with every pushed part reduced to the hash the kit compares local
  * files with. Option overrides are hashed by the kit (sorted key JSON, an
@@ -382,12 +507,13 @@ export function remoteFromProduct(product, now = new Date()) {
         status: typeof product.status === 'string' ? product.status : null,
         live_version: released?.version ?? null,
         live_channel: typeof released?.channel === 'string' ? released.channel : null,
+        ...(Array.isArray(released?.option_keys) ? { live_option_keys: released.option_keys.filter((/** @type {unknown} */ key) => typeof key === 'string') } : {}),
         draft: draft === null ? null : {
             version: typeof draft.version === 'string' ? draft.version : null,
             revision: Number.isInteger(draft.revision) ? draft.revision : null,
             submitted: draft.submitted === true,
             template_sha256: typeof draft.template === 'string' ? templateHash(draft.template) : null,
-            option_overrides_sha256: optionOverridesHash(draft.option_overrides),
+            option_overrides_sha256: optionOverridesHash(draft.option_overrides, typeof draft.template === 'string' ? draft.template : null),
         },
         listing_sha256: listingHash(listingFromProduct(product)),
         latest_review: product.latest_review !== null && typeof product.latest_review === 'object' ? product.latest_review : null,
@@ -399,11 +525,27 @@ export function remoteFromProduct(product, now = new Date()) {
                 sha256: typeof entry.sha256 === 'string' ? entry.sha256.toLowerCase() : null,
                 kind: String(entry.kind ?? ''),
                 library: typeof entry.library?.name === 'string' ? entry.library.name : (typeof entry.library === 'string' ? entry.library : null),
+                ...(typeof entry.locked === 'boolean' ? { locked: entry.locked } : {}),
+                ...(Number.isInteger(entry.size_bytes) ? { size_bytes: entry.size_bytes } : {}),
             })),
         live: draft !== null || released === null ? null : {
             version: released.version,
             template_sha256: typeof released.template_sha256 === 'string' ? released.template_sha256.toLowerCase() : null,
             option_overrides_sha256: Object.hasOwn(released, 'option_overrides') ? optionOverridesHash(released.option_overrides) : null,
         },
+        ...listingImagesEntry(product),
     };
+}
+
+/**
+ * The remote listing images (cover and screenshots with their SHA-256),
+ * recorded only when the payload carries them.
+ *
+ * @param {Record<string, any>} product
+ * @returns {{listing_images?: import('./listing-images.js').RemoteListingImages}}
+ */
+function listingImagesEntry(product) {
+    const images = remoteListingImagesFrom(product);
+
+    return images === undefined ? {} : { listing_images: images };
 }

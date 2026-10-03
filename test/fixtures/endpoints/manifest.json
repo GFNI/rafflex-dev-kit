@@ -1,22 +1,24 @@
 {
     "contract": 1,
-    "version": "878c14e60aed",
-    "generated_at": "2026-10-03T15:44:31+00:00",
+    "version": "7843f716c8ca",
+    "generated_at": "2026-10-03T22:32:50+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
         "skeletons": "__BASE_URL__/dev-kit/skeletons.json",
         "libraries": "__BASE_URL__/dev-kit/libraries.json",
         "fixtures": "__BASE_URL__/dev-kit/fixtures.json",
-        "prompts": "__BASE_URL__/dev-kit/prompts.json"
+        "prompts": "__BASE_URL__/dev-kit/prompts.json",
+        "categories": "__BASE_URL__/dev-kit/categories.json"
     },
     "versions": {
-        "rules": "25eb8113e2d6",
-        "contexts": "f53ed4ad5d7e",
-        "skeletons": "8946c5bb971d",
+        "rules": "971e0e729152",
+        "contexts": "33cab89e4cbc",
+        "skeletons": "61f35964958d",
         "libraries": "493322f3af02",
         "fixtures": "744e2c3c4f86",
-        "prompts": "7e2698cfafb0"
+        "prompts": "3218c80a3f7f",
+        "categories": "f15138804db5"
     },
     "asset_types": [
         {
@@ -45,8 +47,8 @@
         },
         {
             "name": "import",
-            "usage": "npx @rafflex/dev import <bundle>",
-            "summary": "Unpacks a product export bundle into its type folder, or refreshes an existing folder, and commits it.",
+            "usage": "npx @rafflex/dev import \"<bundle>\"",
+            "summary": "Downloads an export_product bundle_url itself (or reads a file, or - for standard input), unpacks it into its type folder or refreshes an existing folder (--force over local changes), and commits it.",
             "json": true
         },
         {
@@ -74,6 +76,12 @@
             "json": true
         },
         {
+            "name": "capture",
+            "usage": "npx @rafflex/dev capture <product>",
+            "summary": "Writes a cover image and screenshots into the product's listing/ folder from the browser run when it has none, and never overwrites the creator's own unless --force is given. Without Playwright it skips and exits 0.",
+            "json": true
+        },
+        {
             "name": "verify",
             "usage": "npx @rafflex/dev verify [<product>...|--all]",
             "summary": "Runs format, then check, then test when Playwright is installed. Run it before every push and fix every blocking issue.",
@@ -88,19 +96,25 @@
         {
             "name": "plan",
             "usage": "npx @rafflex/dev plan <product>",
-            "summary": "Runs verify, then lists exactly what to push as data: template, options, listing, assets, and release notes. Not ready while verify has blocking issues.",
+            "summary": "Runs verify, then lists as data exactly what push would send: template, options, listing, assets, listing images, and release notes. Not ready while verify has blocking issues.",
+            "json": true
+        },
+        {
+            "name": "push",
+            "usage": "npx @rafflex/dev push <product> \"<sync_url>\"",
+            "summary": "Pushes what the plan says changed through a request_sync link (template, options, listing, version, release notes, new files, libraries, the cover and screenshots), creates the product on its first push and renames its folder to the slug, records the result, and commits it as a Push. Refused while verify blocks or when the draft changed on the marketplace since the last sync.",
             "json": true
         },
         {
             "name": "synced",
-            "usage": "npx @rafflex/dev synced <product>",
-            "summary": "Records a get_product result read from standard input as the product's last known remote state, and commits the product folder.",
+            "usage": "npx @rafflex/dev synced <product> [\"<sync_url>\"]",
+            "summary": "Records the product's remote state and feedback from a request_sync link (or a get_product result on standard input, only when push cannot reach the marketplace). Commits a Push or Sync when the draft changed, product.json alone when only other state changed, and nothing when nothing changed.",
             "json": true
         },
         {
             "name": "release",
-            "usage": "npx @rafflex/dev release <product>",
-            "summary": "Closes the Unreleased changelog section after submit_for_review succeeds, and tags the version.",
+            "usage": "npx @rafflex/dev release <product> [\"<sync_url>\"]",
+            "summary": "Run only after submit_for_review succeeds: closes the Unreleased changelog section (refused without notes there), marks the version in review, commits, and tags it. With a request_sync link it records the fresh state too, and refuses with not_submitted, changing nothing, before the version is submitted.",
             "json": true
         },
         {

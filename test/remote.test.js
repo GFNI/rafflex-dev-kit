@@ -22,7 +22,8 @@ describe('rules and data from the marketplace', () => {
 
         assert.equal(loaded.offline, false);
         assert.deepEqual(loaded.warnings, []);
-        assert.deepEqual(Object.keys(loaded.documents), ['rules', 'contexts', 'skeletons', 'libraries']);
+        assert.deepEqual(Object.keys(loaded.documents), ['rules', 'contexts', 'skeletons', 'libraries', 'categories']);
+        assert.equal(loaded.documents.categories.categories.length > 0, true);
         assert.ok(existsSync(join(loaded.cacheDirectory, 'rules.json')));
         assert.ok(server.requests.every((request) => request.method === 'GET' && request.headers.authorization === undefined && request.headers.cookie === undefined));
     });

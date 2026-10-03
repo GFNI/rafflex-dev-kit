@@ -1,12 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
-import { defaultTagFor } from '../assets.js';
+import { importedFilenameFor } from '../assets.js';
 import { readAll } from '../cli.js';
 import { commitProduct } from '../git.js';
+import { extensionFor, sniffContent } from '../file-content.js';
+import { listingDirectoryName, remoteListingImagesFrom, screenshotsDirectoryName } from '../listing-images.js';
 import { formatListing } from '../listing.js';
+import { planListingImagesFor } from '../push-plan.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
+import { confinedWritePath, isPlainFilename, isSlug, resolvesInside } from '../safe-paths.js';
+import { recordSyncTime } from '../sync-times.js';
 import { bumpVersion, isVersion } from '../semver.js';
-import { compareWithRemote, latestReleasedVersion, readLocalState, remoteFromProduct, sha256 } from '../sync-state.js';
+import { compareWithRemote, latestReleasedVersion, listingTagNamesFor, localTagNames, readLocalState, remoteFromProduct, sha256, withListingTagNames } from '../sync-state.js';
 import {
     assetsDirectoryName,
     assetTypeNamed,
@@ -25,7 +30,12 @@ import { fail, messageOf, writeJson } from './output.js';
 /** The export bundle format this kit reads. */
 export const BundleFormat = 1;
 
-const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** How long the bundle download may take, like a sync link request. */
+export const bundleTimeoutMs = 30000;
+
+/** How long each media file or listing image download may take, like an upload. */
+export const mediaTimeoutMs = 120000;
+
 const bundleFiles = [templateFilename, optionsFilename, listingFilename, changelogFilename];
 
 export class ImportError extends Error {}
@@ -49,23 +59,7 @@ async function readBundleText(source, cwd, stdin) {
     }
 
     if (/^https?:\/\//i.test(source)) {
-        let response;
-
-        try {
-            response = await fetch(source, { headers: { Accept: 'application/json' } });
-        } catch (error) {
-            throw new ImportError(`Could not download the bundle: ${messageOf(/** @type {any} */ (error)?.cause ?? error)}.`);
-        }
-
-        if (response.status === 403 || response.status === 401) {
-            throw new ImportError('The bundle link was refused (it is valid for 10 minutes). Call export_product again for a fresh link.');
-        }
-
-        if (!response.ok) {
-            throw new ImportError(`Could not download the bundle: the marketplace answered ${response.status}.`);
-        }
-
-        return response.text();
+        return fetchBundleText(source);
     }
 
     const path = resolve(cwd, source);
@@ -75,6 +69,90 @@ async function readBundleText(source, cwd, stdin) {
     }
 
     return readFileSync(path, 'utf8');
+}
+
+/**
+ * Download a bundle from its URL (export_product's signed link), giving
+ * up after `timeoutMs`.
+ *
+ * @param {string} url
+ * @param {number} [timeoutMs]
+ * @returns {Promise<string>}
+ */
+export async function fetchBundleText(url, timeoutMs = bundleTimeoutMs) {
+    let response;
+
+    try {
+        response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+        throw new ImportError(`Could not download the bundle: ${downloadFailure(error, timeoutMs)}.`);
+    }
+
+    if (response.status === 403 || response.status === 401) {
+        throw new ImportError('The bundle link was refused (it is valid for 10 minutes). Call export_product again for a fresh link.');
+    }
+
+    if (!response.ok) {
+        throw new ImportError(`Could not download the bundle: the marketplace answered ${response.status}.`);
+    }
+
+    try {
+        return await response.text();
+    } catch (error) {
+        throw new ImportError(`Could not download the bundle: ${downloadFailure(error, timeoutMs)}.`);
+    }
+}
+
+/**
+ * Why a download failed, saying so plainly when it timed out.
+ *
+ * @param {unknown} error
+ * @param {number} timeoutMs
+ */
+function downloadFailure(error, timeoutMs) {
+    const name = /** @type {any} */ (error)?.name;
+
+    if (name === 'TimeoutError' || name === 'AbortError') {
+        const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+
+        return `it took longer than ${seconds} ${seconds === 1 ? 'second' : 'seconds'}, so the import stopped and nothing was written. Check the connection and run import again (call export_product for a fresh link if this one is over 10 minutes old)`;
+    }
+
+    return messageOf(/** @type {any} */ (error)?.cause ?? error);
+}
+
+/**
+ * Refuse a bundle whose names would leave the product folder: every name
+ * that becomes a path (the slug, the type, each media tag and file name)
+ * must be plain.
+ *
+ * @param {Record<string, any>} product
+ * @param {unknown[]} media
+ */
+function checkBundlePaths(product, media) {
+    if (!isSlug(product.slug)) {
+        throw new ImportError(`The bundle's slug "${product.slug}" is not a valid slug, so nothing was written. Export the product again; if it persists, contact support@rafflex.io.`);
+    }
+
+    if (!/^[a-z][a-z0-9_-]*$/.test(product.type)) {
+        throw new ImportError(`The bundle's product type "${product.type}" is not a valid type, so nothing was written.`);
+    }
+
+    for (const [index, entry] of media.entries()) {
+        if (entry === null || typeof entry !== 'object') {
+            throw new ImportError(`The bundle's media ${index + 1} is not an object, so nothing was written.`);
+        }
+
+        const { tag, filename } = /** @type {Record<string, any>} */ (entry);
+
+        if (tag !== null && tag !== undefined && tag !== '' && !isSlug(tag)) {
+            throw new ImportError(`The bundle's media ${index + 1} has the tag "${tag}", which is not a valid tag (lower case words joined by hyphens), so nothing was written. Export the product again; if it persists, contact support@rafflex.io.`);
+        }
+
+        if (filename !== null && filename !== undefined && filename !== '' && !isPlainFilename(filename)) {
+            throw new ImportError(`The bundle's media ${index + 1} has the file name "${filename}", which is not a plain file name, so nothing was written. Export the product again; if it persists, contact support@rafflex.io.`);
+        }
+    }
 }
 
 /**
@@ -109,9 +187,6 @@ export function parseBundle(text) {
         throw new ImportError('The bundle has no product with a slug and type.');
     }
 
-    if (!slugPattern.test(product.slug)) {
-        throw new ImportError(`The bundle's slug "${product.slug}" is not a valid slug.`);
-    }
 
     if (bundle.files === null || typeof bundle.files !== 'object' || Array.isArray(bundle.files)) {
         throw new ImportError('The bundle has no files.');
@@ -127,31 +202,13 @@ export function parseBundle(text) {
         throw new ImportError('The bundle\'s media must be a list.');
     }
 
+    checkBundlePaths(product, bundle.media ?? []);
+
     return { ...bundle, media: bundle.media ?? [] };
 }
 
-/**
- * The file name a media entry is written under: its own name when the kit
- * derives the same tag from it, else `<tag><extension>`, because the kit
- * tags a file by its name (an approved library by its default tag). A
- * name is never allowed to leave the assets folder.
- *
- * @param {{tag: string, filename: string, library: any}} entry
- */
-export function localFilenameFor(entry) {
-    const filename = String(entry.filename ?? '').split(/[\\/]/).pop() ?? '';
-    const safe = filename !== '' && filename !== '.' && filename !== '..' && !filename.startsWith('.') ? filename : '';
-
-    if (entry.library !== null && entry.library !== undefined && safe !== '') {
-        return safe;
-    }
-
-    if (safe !== '' && defaultTagFor(safe) === entry.tag) {
-        return safe;
-    }
-
-    return `${entry.tag}${extname(safe).toLowerCase()}`;
-}
+/** The file name a media entry is written under (see importedFilenameFor). */
+export const localFilenameFor = importedFilenameFor;
 
 /**
  * The version to work on in a freshly imported product: the draft's,
@@ -171,22 +228,30 @@ export function importedVersion(product) {
 }
 
 /**
+ * Download one file, giving up after `timeoutMs`.
+ *
  * @param {string} url
+ * @param {number} [timeoutMs]
+ * @returns {Promise<Buffer>}
  */
-async function download(url) {
+export async function download(url, timeoutMs = mediaTimeoutMs) {
     let response;
 
     try {
-        response = await fetch(url);
+        response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
-        throw new ImportError(`Could not download ${url}: ${messageOf(/** @type {any} */ (error)?.cause ?? error)}.`);
+        throw new ImportError(`Could not download ${url}: ${downloadFailure(error, timeoutMs)}.`);
     }
 
     if (!response.ok) {
         throw new ImportError(`Could not download ${url}: the server answered ${response.status}.`);
     }
 
-    return Buffer.from(await response.arrayBuffer());
+    try {
+        return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+        throw new ImportError(`Could not download ${url}: ${downloadFailure(error, timeoutMs)}.`);
+    }
 }
 
 /**
@@ -213,7 +278,7 @@ async function writeProductFolder(directory, bundle, type) {
     writeFileSync(join(assetsDirectory, '.gitkeep'), '');
 
     for (const name of bundleFiles) {
-        writeFileSync(join(directory, name), bundle.files[name] ?? defaults[name]);
+        writeFileSync(confinedWritePath(directory, name), bundle.files[name] ?? defaults[name]);
     }
 
     writeProductJson(directory, {
@@ -221,7 +286,7 @@ async function writeProductFolder(directory, bundle, type) {
         slug: product.slug,
         title: typeof product.title === 'string' && product.title !== '' ? product.title : product.slug,
         version,
-        remote: remoteFromProduct(product),
+        remote: withListingTagNames(remoteFromProduct(product), product, listingTagNamesFor(product, { local: localTagNames({ listingPath: join(directory, listingFilename) }) })),
     });
 
     /** @type {{path: string, tag: string, sha256: string}[]} */
@@ -255,17 +320,89 @@ async function writeProductFolder(directory, bundle, type) {
             throw new ImportError(`${entry.filename} (${entry.tag}) does not match the bundle's hash: the download was ${hash}, the marketplace recorded ${entry.sha256}. Export again; if it persists, contact support@rafflex.io.`);
         }
 
-        writeFileSync(join(assetsDirectory, filename), contents);
+        writeFileSync(confinedWritePath(directory, join(assetsDirectoryName, filename)), contents);
         assets.push({ path: `${assetsDirectoryName}/${filename}`, tag: entry.tag, sha256: hash });
     }
 
-    return { version, files: [...bundleFiles], assets, skipped };
+    const listingImages = await writeListingImages(directory, product);
+
+    return { version, files: [...bundleFiles, ...listingImages], assets, skipped };
+}
+
+/**
+ * The extension a downloaded listing image is saved with: what its
+ * content is, else what its URL says, else png.
+ *
+ * @param {Buffer} contents
+ * @param {string} url
+ */
+function listingImageExtension(contents, url) {
+    const sniffed = sniffContent(contents);
+
+    if (sniffed !== null) {
+        return extensionFor[sniffed];
+    }
+
+    const fromUrl = extname(new URL(url).pathname).slice(1).toLowerCase();
+
+    return /^[a-z0-9]{2,5}$/.test(fromUrl) ? fromUrl : 'png';
+}
+
+/**
+ * Download the product's cover and screenshots into listing/, checking
+ * each against the hash the marketplace reported. Screenshots are named
+ * 01, 02, ... so filename order keeps the marketplace's order.
+ *
+ * @param {string} directory
+ * @param {Record<string, any>} product
+ * @returns {Promise<string[]>} The files written, relative to the product folder.
+ */
+async function writeListingImages(directory, product) {
+    const images = remoteListingImagesFrom(product);
+    /** @type {string[]} */
+    const written = [];
+    const fetchChecked = async (/** @type {{url: string|null, sha256: string|null}} */ image, /** @type {string} */ label) => {
+        const contents = await download(/** @type {string} */ (image.url));
+        const hash = sha256(contents);
+
+        if (image.sha256 !== null && image.sha256 !== hash) {
+            throw new ImportError(`The ${label} does not match the bundle's hash: the download was ${hash}, the marketplace recorded ${image.sha256}. Export again; if it persists, contact support@rafflex.io.`);
+        }
+
+        return contents;
+    };
+    const isDownloadable = (/** @type {{url: string|null}} */ image) => typeof image.url === 'string' && /^https?:\/\//i.test(image.url);
+
+    if (images === undefined) {
+        return written;
+    }
+
+    if (images.cover !== null && isDownloadable(images.cover)) {
+        const contents = await fetchChecked(images.cover, 'cover image');
+        const name = `cover.${listingImageExtension(contents, /** @type {string} */ (images.cover.url))}`;
+
+        mkdirSync(join(directory, listingDirectoryName), { recursive: true });
+        writeFileSync(confinedWritePath(directory, join(listingDirectoryName, name)), contents);
+        written.push(`${listingDirectoryName}/${name}`);
+    }
+
+    for (const [index, screenshot] of images.screenshots.filter(isDownloadable).entries()) {
+        const contents = await fetchChecked(screenshot, `screenshot ${index + 1}`);
+        const name = `${String(index + 1).padStart(2, '0')}.${listingImageExtension(contents, /** @type {string} */ (screenshot.url))}`;
+
+        mkdirSync(join(directory, listingDirectoryName, screenshotsDirectoryName), { recursive: true });
+        writeFileSync(confinedWritePath(directory, join(listingDirectoryName, screenshotsDirectoryName, name)), contents);
+        written.push(`${listingDirectoryName}/${screenshotsDirectoryName}/${name}`);
+    }
+
+    return written;
 }
 
 /**
  * @param {import('../sync-state.js').LocalChanges} changes
+ * @param {import('../listing-images.js').ListingImagesPlan} [listingImages]
  */
-function describeChanges(changes) {
+function describeChanges(changes, listingImages) {
     return [
         changes.template && 'template.twig',
         changes.options && 'options.json',
@@ -273,11 +410,13 @@ function describeChanges(changes) {
         ...changes.assets.new.map((asset) => `${asset.path} (new)`),
         ...changes.assets.changed.map((asset) => `${asset.path} (changed)`),
         ...changes.assets.removed.map((entry) => `${entry.filename} (removed)`),
+        ...(listingImages?.cover ? [`${listingImages.cover.path} (${listingImages.cover.change})`] : []),
+        ...(listingImages?.screenshots ?? []).map((screenshot) => `${screenshot.path} (new)`),
     ].filter((entry) => typeof entry === 'string');
 }
 
 /**
- * `import <bundle> [--force]`: write a product export bundle (from
+ * `import "<bundle>" [--force]`: write a product export bundle (from
  * export_product) as a product folder under its type folder, named after
  * its slug: the files verbatim, product.json with the server state, and
  * each media file downloaded into assets/ and checked against its hash.
@@ -327,6 +466,10 @@ export async function runImportCommand(context) {
     const slug = bundle.product.slug;
     const typeDirectory = join(workspace.root, assetType.folder);
     const target = join(typeDirectory, slug);
+
+    if (!resolvesInside(workspace.root, typeDirectory) || !resolvesInside(typeDirectory, target)) {
+        return fail(context, `The bundle's product would be written outside the workspace (${assetType.folder}/${slug}), so nothing was written.`, 2);
+    }
     const path = `${assetType.folder}/${slug}`;
     const products = listProducts(workspace);
     const existing = products.find((product) => product.slug === slug && product.type === assetType.value)
@@ -342,9 +485,11 @@ export async function runImportCommand(context) {
         let changes = [];
 
         try {
-            const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries']);
+            const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
 
-            changes = describeChanges(compareWithRemote(readLocalState(existing, documents), existing.manifest.remote));
+            const local = readLocalState(existing, documents);
+
+            changes = describeChanges(compareWithRemote(local, existing.manifest.remote), planListingImagesFor(local, existing.manifest.remote));
         } catch {
             changes = [];
         }
@@ -390,6 +535,8 @@ export async function runImportCommand(context) {
     } else {
         renameSync(temporary, target);
     }
+
+    recordSyncTime(workspace.root, { slug, path });
 
     const revertedFrom = typeof bundle.product.draft?.reverted_from === 'string' ? bundle.product.draft.reverted_from : null;
     const message = revertedFrom === null ? `Import ${slug} from the marketplace` : `Revert ${slug} to ${revertedFrom} as ${written.version}`;
