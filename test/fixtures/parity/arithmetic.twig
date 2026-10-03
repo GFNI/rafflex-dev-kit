@@ -1,0 +1,6 @@
+<p>{{ null + 1 }} {{ null * 2 }} {{ 1 - null }} {{ true + 1 }} {{ missing * 3 }} {{ missing / 2 }} {{ 1.5 + null }} {{ ' 5' + 1 }} {{ '1e3' + 1 }}</p>
+<p>{{ null|round }} {{ null|round(2) }} {{ 'abc'|round }} {{ true|round }} {{ '2.567'|round(1) }}</p>
+<p>{{ 7.5 % 2 }} {{ 7 % 2.5 }} {{ -7 % 3 }} {{ 7 // 2.5 }} {{ -7 // 2 }}</p>
+<p>{{ 12345|length }} {{ 0.1|length }} {{ 1.5|length }} {{ true|length }} {{ false|length }} {{ null|length }}</p>
+<p>{{ 'abc'|join(',') }} {{ 5|join(',') }} {{ true|join(',') }} {{ 1.5|join(',') }} [{{ missing|join(',') }}]</p>
+<p>{{ 3.14159|number_format(20) }} {{ 0.1|number_format(30) }} {{ 3.14159|number_format(-2) }} {{ 1234.5|number_format(-2) }} {{ 2.5|number_format(120) }} {{ 3.14159|number_format(150) }}</p>
