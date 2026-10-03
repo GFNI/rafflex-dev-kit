@@ -44,4 +44,16 @@ The kit closes the loop: a product goes from an empty folder to in review withou
 * Option overrides are compared after the same tidy up the marketplace applies, entries the template does not read dropped (the draft's against the draft's own template), so `plan` no longer reports options as changed after every push and `push` sees no conflict where there is none.
 * The preview renders closer to the platform: every `date` format character (`e` prints UTC), a render error for text the platform cannot read as a time, `number_format` with any number of decimals, arithmetic with null and booleans, division and modulo by zero failing, and `length` and `join` on numbers and text. Buyer image placeholders keep their shape inside a `<style>`.
 
+### Stable tags, a safe restore, and closer rendering
+
+* Tags are stable. A file in `assets/` whose name matches a file on the marketplace keeps that file's tag, so deleting `logo.png` no longer relabels `logo.webp` from `logo-2` to `logo`, and `asset_locked` compares a file only with the marketplace file of the same name. A new file takes its stem, suffixed past every tag a marketplace file holds, as the platform tags a new upload. The preview, `check`, `plan`, `push`, and the app agree.
+* `restore last-push` never rolls back `product.json`: it returns the creator's files to the last push and keeps the recorded marketplace state, so a version recorded in review stays in review. Only a version bumped locally since the last recorded state goes back, and the list of what would be lost never names `product.json`.
+* A push from a workspace inside a larger git repository holds back the right file when some files did not upload, and commits nothing outside the workspace.
+* Listing tags count as unchanged after the push that sent them, however the marketplace spells or merges them (a CJK or emoji only tag, `£5 Prizes`): `product.json` records the names sent. A listing no longer looks changed forever, and a second push sends nothing.
+* `round` and `number_format` round as the platform does (`(2.01 / 1.2)|number_format(2)` is 1.67), and print exact ties as it does.
+* `==`, `!=`, `<`, `>`, `<=`, `>=`, and `in` between null, booleans, numbers, and text compare loosely as the platform does: an unset option equals 0 and is below 1, and `0 == ''` is false.
+* `date` takes its time zone argument (`'2026-10-05 23:30'|date('H:i', 'Europe/London')` is 00:30), reads `false` as now and `true` as 1970, reads a negative timestamp in text, and fails on an unknown zone as the platform does. A toggle piped to `date` no longer blocks.
+* Arithmetic on text with a number and more after it (`'5 apples' + 1`, a `number_format` result) and on captured text or a list fails as it does on the platform.
+* `option_render_error` for a text option piped into `date` gives the guard to use: `{% if options.ends matches "..." %}` with a date pattern the platform always reads.
+
 The command not found message now says to run the command with `npx @rafflex/dev@latest`.
