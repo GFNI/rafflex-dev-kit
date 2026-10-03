@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, isAbsolute, join, relative, sep } from 'node:path';
 import { isBlocking } from '../checker.js';
+import { resultsDirectoryName } from '../workspace.js';
 
 /**
  * A product's last test result, as the app shows it: read from the
@@ -9,8 +10,7 @@ import { isBlocking } from '../checker.js';
  * shape so the app does not depend on every field of every command.
  */
 
-/** Test output inside a product folder, ignored by git. */
-export const resultsDirectoryName = '.results';
+export { resultsDirectoryName };
 
 /** Written by the app after a run when the command left no result of its own. */
 export const appResultFilename = 'app-run.json';
@@ -439,7 +439,9 @@ export function readLastResult(productDirectory) {
         const wrapped = isObject(json) && json.kit_app === true;
         const at = wrapped && typeof json.at === 'string' ? json.at : new Date(Number(candidate.stats?.mtimeMs)).toISOString();
 
-        return normaliseResult(wrapped ? json.output : json, { productDirectory, at, source: wrapped ? json.source : null });
+        const source = wrapped ? json.source : candidate.path.endsWith('verify.json') ? 'verify' : 'test';
+
+        return normaliseResult(wrapped ? json.output : json, { productDirectory, at, source });
     }
 
     return null;

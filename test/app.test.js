@@ -372,3 +372,35 @@ describe('the app without prompts', () => {
         }
     });
 });
+
+describe('the app with PRD 41 verify', () => {
+    test('Test runs verify by default, streams its steps, and reads the result verify saved', async () => {
+        const fixtures = await startFixtureServer();
+        const root = temporaryWorkspace({ config: { base_url: fixtures.baseUrl }, products: [{ type: 'block', title: 'Winner Wall', template: '<p>{{ settings.site_name }}</p>\n' }] });
+        const server = await startDevServer({ workspace: loadWorkspace(root), loaded, port: 0, watchFiles: false, prompts: stubPrompts(), detect: () => [], tests: { env: { ...process.env, RAFFLEX_BASE_URL: fixtures.baseUrl } } });
+        const events = listen(`${server.url}__rafflex/events`);
+
+        try {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 100);
+            });
+
+            const started = await act(server, 'p/blocks/winner-wall/__rafflex/actions/test');
+
+            assert.equal(started.json().command, 'verify');
+
+            const done = await events.waitFor((event) => event.event === 'test' && event.data.status === 'done', 120000);
+            const lines = events.events.filter((event) => event.event === 'test' && event.data.status === 'running').map((event) => event.data.line);
+
+            assert.ok(lines.includes('Checking blocks/winner-wall in every scenario'), lines.join('\n'));
+            assert.equal(done.data.result.source, 'verify');
+            assert.equal(done.data.result.status, 'passed');
+            assert.equal(JSON.parse(readFileSync(join(root, 'blocks', 'winner-wall', '.results', 'verify.json'), 'utf8')).product, 'blocks/winner-wall');
+            assert.equal(existsSync(join(root, 'blocks', 'winner-wall', '.results', 'app-run.json')), false);
+        } finally {
+            events.close();
+            await server.close();
+            await fixtures.close();
+        }
+    });
+});

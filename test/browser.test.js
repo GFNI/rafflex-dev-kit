@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { launchChromium, loadPlaywright } from '../src/playwright.js';
@@ -66,7 +66,7 @@ describe('browser tests without Playwright', () => {
         assert.equal(verified.output.ready, true);
         assert.equal(verified.output.browser_tests, 'skipped');
         assert.match((await run(['verify'], { cwd: root, baseUrl: server.baseUrl })).stdout, /ready to push \(browser tests skipped\)/);
-        assert.equal(existsSync(join(root, 'games', 'spin-to-win', '.results')), false);
+        assert.deepEqual(readdirSync(join(root, 'games', 'spin-to-win', '.results')), ['verify.json']);
     });
 });
 

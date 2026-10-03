@@ -1,4 +1,7 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { isBlocking, verdictNote } from '../checker.js';
+import { resultsDirectoryName } from '../workspace.js';
 import { checkProduct } from './check.js';
 import { formatProduct, loadSelection } from './format.js';
 import { messageOf, writeJson } from './output.js';
@@ -26,19 +29,23 @@ import { testLines, testProducts } from './test.js';
  * @param {import('../workspace.js').Workspace} options.workspace
  * @param {import('../remote.js').LoadedDocuments} options.loaded
  * @param {import('../workspace.js').Product[]} options.products
+ * @param {(line: string) => void} [options.onProgress] One line per step, for the Rafflex app.
  * @returns {Promise<VerifyResult[]>}
  */
-export async function verifyProducts({ workspace, loaded, products }) {
+export async function verifyProducts({ workspace, loaded, products, onProgress = () => {} }) {
     /** @type {{format: import('./format.js').FormatResult, check: import('./check.js').ProductCheck}[]} */
     const staged = [];
 
     for (const product of products) {
+        onProgress(`Formatting ${product.path}`);
         const format = await formatProduct(product, loaded.documents);
+        onProgress(`Checking ${product.path} in every scenario`);
         const { result: check } = await checkProduct(product, loaded, undefined);
 
         staged.push({ format, check });
     }
 
+    onProgress('Running the browser tests');
     const tests = await testProducts({ workspace, loaded, products });
 
     return staged.map(({ format, check }, index) => {
@@ -91,6 +98,24 @@ function verifyLines(result) {
 }
 
 /**
+ * Keep the full result in the product's .results/verify.json, so the
+ * Rafflex app shows a verify the AI ran in its terminal (PRD 42).
+ *
+ * @param {import('../workspace.js').Product} product
+ * @param {VerifyResult} result
+ */
+export function saveVerifyResult(product, result) {
+    const directory = join(product.directory, resultsDirectoryName);
+
+    try {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, 'verify.json'), `${JSON.stringify(result, null, 2)}\n`);
+    } catch {
+        // A read only folder keeps the result in the output only.
+    }
+}
+
+/**
  * `verify [<product>...|--all]`: format, then check, then test when
  * Playwright is installed. Run before every push; fix every blocking
  * issue and push only when ready.
@@ -120,8 +145,21 @@ export async function runVerifyCommand(context) {
         return 2;
     }
 
-    const results = await verifyProducts({ workspace: selection.workspace, loaded: /** @type {import('../remote.js').LoadedDocuments} */ (selection.loaded), products: selection.products });
+    const results = await verifyProducts({
+        workspace: selection.workspace,
+        loaded: /** @type {import('../remote.js').LoadedDocuments} */ (selection.loaded),
+        products: selection.products,
+        onProgress: (line) => {
+            if (options.json) {
+                stderr.write(`${line}\n`);
+            }
+        },
+    });
     const ready = results.every((result) => result.ready);
+
+    for (const [index, result] of results.entries()) {
+        saveVerifyResult(selection.products[index], result);
+    }
 
     if (options.json) {
         writeJson(stdout, results.length === 1 ? results[0] : { ready, products: results });
