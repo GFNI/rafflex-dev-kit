@@ -234,7 +234,7 @@ describe('the checklist and the new checks through the CLI', () => {
         const directory = join(root, 'games', 'too-long');
 
         addListingImages(directory, {
-            'cover.png': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+            'cover.png': Buffer.from('not an image at all'),
             'cover.jpg': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
             ...Object.fromEntries(Array.from({ length: rules.listing.images.screenshot.max_count + 1 }, (_, index) => [`screenshots/${index}.png`, png(String(index))])),
             'screenshots/big.png': Buffer.concat([png('big'), Buffer.alloc(rules.listing.images.screenshot.max_bytes)]),
@@ -252,7 +252,7 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.ok(listingMessages.some((message) => /video_url "not a link" is not a web address/.test(message)));
         assert.ok(listingMessages.some((message) => message.includes(`the marketplace does not have: 999, Racing. Use category names from this list: ${categories.categories.map((/** @type {any} */ category) => category.name).join(', ')}.`)));
         assert.ok(listingMessages.some((message) => /listing\/ holds 2 cover images \(cover\.jpg, cover\.png\)\. Keep one\./.test(message)));
-        assert.ok(listingMessages.some((message) => /listing\/cover\.png is named as a PNG image but holds a JPEG image/.test(message)));
+        assert.ok(listingMessages.some((message) => /listing\/cover\.png is named as a PNG image but its content is not one the marketplace can identify/.test(message)));
         assert.ok(listingMessages.some((message) => /listing\/screenshots holds 9 screenshots; a product shows at most 6/.test(message)));
         assert.ok(listingMessages.some((message) => /listing\/screenshots\/big\.png is 2 MB; a screenshot can be at most 2 MB/.test(message)));
         assert.ok(listingMessages.some((message) => /listing\/screenshots\/notes\.txt cannot be used as a screenshot/.test(message)));
@@ -271,7 +271,10 @@ describe('the checklist and the new checks through the CLI', () => {
                 listing: listing(`category_ids: [${firstCategory.id}]`),
                 assets: {
                     'Win Jingle.mp3': Buffer.from('ID3\x04rest', 'latin1'),
-                    'wheel.png': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+                    'wheel.png': Buffer.from('not an image at all'),
+                    'hero.png': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+                    'fanfare.png': Buffer.from([0xff, 0xfb, 0x90, 0x44]),
+                    'aac.mp3': Buffer.from([0xff, 0xf1, 0x50, 0x40]),
                     'Prize.png': png('a'),
                     'prize.jpg': Buffer.from([0xff, 0xd8, 0xff, 0xe1]),
                     'one/star.png': png('one'),
@@ -293,10 +296,15 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.deepEqual(byCode('asset_filename'), ['assets/Win Jingle.mp3 cannot be uploaded under this name. Use letters, numbers, dots, hyphens, and underscores only in file names. Rename it to assets/Win-Jingle.mp3 (its tag stays win-jingle).']);
         assert.deepEqual(byCode('asset_duplicate'), [
             'assets/one/star.png and assets/two/star.png upload under the same name, so one would replace the other. Rename one, for example to star-2.png.',
-            "assets/Prize.png and assets/prize.jpg would all take the tag prize. Rename all but one, because files['prize'] can only mean one file.",
         ]);
         assert.deepEqual(byCode('asset_capacity'), ['This media library is full (maximum 25 MB). The files in assets/ add up to 28 MB, over the 25 MB a product\'s media library holds.']);
-        assert.deepEqual(byCode('asset_content_mismatch'), ['assets/wheel.png is named as a PNG image but holds a JPEG image. Rename it to wheel.jpg, or export it again as a PNG image.']);
+        assert.deepEqual(byCode('asset_content_mismatch'), [
+            'assets/aac.mp3 is named as MP3 audio but holds AAC audio, which the marketplace does not accept here. Export it again as MP3 audio.',
+            'assets/wheel.png is named as a PNG image but its content is not one the marketplace can identify. Export it again as a PNG image.',
+        ]);
+        assert.deepEqual(byCode('asset_content_warning'), [
+            "assets/fanfare.png is named as a PNG image but holds MP3 audio. The marketplace stores it as what it is, so files['fanfare'] is a sound, not an image. Rename it to fanfare.mp3 if that is intended.",
+        ]);
         assert.ok(output.issues.filter((/** @type {any} */ issue) => issue.code.startsWith('asset_')).every((/** @type {any} */ issue) => issue.fix !== '' && typeof issue.file === 'string'));
     });
 

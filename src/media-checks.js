@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultTagFor, fileSize, filenameStem } from './assets.js';
-import { contentMismatch, mismatchMessage } from './file-content.js';
+import { contentTypesFor, contentVerdict, contentVerdictMessage } from './file-content.js';
 import { fixFor } from './listing-checks.js';
 import { compareWithRemote, readLocalState } from './sync-state.js';
 
@@ -13,14 +13,23 @@ import { compareWithRemote, readLocalState } from './sync-state.js';
  * - `asset_filename`: a file the push uploads has a name the upload
  *   refuses (`filename_pattern`, `max_filename_length`). Files already on
  *   the marketplace are not uploaded again, so their names are left alone.
- * - `asset_duplicate`: two files in assets/ upload under the same name or
- *   would take the same tag (the kit would otherwise suffix one -2).
+ * - `asset_duplicate`: two files in assets/ upload under the same name
+ *   (the same file name in two folders, or names differing only in case),
+ *   or two approved library files would take the same tag. Two files that
+ *   only share a stem (images/win.png and sounds/win.mp3) are fine: the
+ *   second takes the tag win-2, in the preview and on the marketplace.
  * - `asset_capacity`: the media in assets/ is over the per product
  *   library capacity. Approved libraries take no space.
- * - `asset_content_mismatch`: a file the push uploads holds content that
- *   does not match its extension (a JPEG named .png).
+ * - `asset_content_mismatch`: a file the push uploads holds content the
+ *   marketplace refuses for its extension (text named .png, AAC named
+ *   .mp3). Another image type under an image extension is fine: the
+ *   marketplace stores what the content is.
  *
- * Every one blocks, because the marketplace refuses the upload.
+ * Every one blocks, because the marketplace refuses the upload. One
+ * warning sits beside them: `asset_content_warning`, content the
+ * marketplace accepts but stores as another kind than the name says
+ * (audio named .png), so the template gets a sound where it expects an
+ * image.
  */
 
 /** @type {Record<string, string>} */
@@ -28,8 +37,12 @@ export const mediaFixes = {
     asset_filename: 'Rename the file in assets/ as the message says. Its tag is the file name without the extension, so the template keeps working when only the punctuation changes.',
     asset_duplicate: 'Give each file in assets/ its own name, and update files[...] in the template to the new tag.',
     asset_capacity: 'Remove files the template no longer uses from assets/, or save images and sounds smaller.',
-    asset_content_mismatch: 'Rename the file to the extension its content has, or export it again in the format its name says.',
+    asset_content_mismatch: 'Export the file again in the format its name says.',
+    asset_content_warning: 'Rename the file to the extension its content has, or export it again in the format its name says.',
 };
+
+/** The extensions the media library takes when the rules do not say. */
+const defaultUploadExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'glb', 'js'];
 
 /**
  * @typedef {import('./checker.js').Issue} Issue
@@ -119,7 +132,7 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
         const suggestion = suggestedFilename(asset.filename, pattern, maxLength);
         const folder = asset.path.slice(0, asset.path.length - asset.filename.length);
 
-        issues.push(issue('asset_filename', `${asset.path} cannot be uploaded under this name. ${reason} Rename it to ${folder}${suggestion}${defaultTagFor(suggestion) === asset.tag ? ` (its tag stays ${asset.tag})` : ` and use files['${defaultTagFor(suggestion)}'] in the template`}.`, asset.path));
+        issues.push(issue('asset_filename', `${asset.path} cannot be uploaded under this name. ${reason} Rename it to ${folder}${suggestion}${defaultTagFor(suggestion) === defaultTagFor(asset.filename) ? ` (its tag stays ${asset.tag})` : ` and use files['${defaultTagFor(suggestion)}'] in the template`}.`, asset.path));
     }
 
     issues.push(...duplicateIssues(local.assets, issue));
@@ -133,11 +146,13 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
         issues.push(issue('asset_capacity', `${full}The files in assets/ add up to ${fileSize(used)}, over the ${fileSize(capacity)} a product's media library holds.`, 'assets/'));
     }
 
-    for (const asset of uploads) {
-        const mismatch = contentMismatch(asset.filename, readFileSync(join(product.directory, asset.path)));
+    const accepted = contentTypesFor(Array.isArray(uploadRules.extensions) ? uploadRules.extensions : defaultUploadExtensions);
 
-        if (mismatch !== null) {
-            issues.push(issue('asset_content_mismatch', mismatchMessage(asset.path, mismatch), asset.path));
+    for (const asset of uploads) {
+        const verdict = contentVerdict(asset.filename, readFileSync(join(product.directory, asset.path)), accepted);
+
+        if (verdict !== null) {
+            issues.push(issue(verdict.blocking ? 'asset_content_mismatch' : 'asset_content_warning', contentVerdictMessage(asset.path, verdict, asset.tag), asset.path));
         }
     }
 
@@ -146,7 +161,10 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
 
 /**
  * Two files that upload under the same name (in different folders, or
- * differing only in case), or that would take the same tag.
+ * differing only in case), or two approved libraries that would take the
+ * same tag. Media files that only share a stem take suffixed tags (win,
+ * win-2) and the push sends each tag, so the marketplace holds the same
+ * tags the preview uses.
  *
  * @param {import('./sync-state.js').LocalAsset[]} assets
  * @param {(code: string, message: string, file: string) => Issue} issue
@@ -165,9 +183,10 @@ function duplicateIssues(assets, issue) {
             const key = asset.filename.toLowerCase();
 
             byFilename.set(key, [...(byFilename.get(key) ?? []), asset]);
+            continue;
         }
 
-        const baseTag = asset.library === null ? defaultTagFor(asset.filename) : asset.tag.replace(/-\d+$/, '');
+        const baseTag = asset.tag.replace(/-\d+$/, '');
 
         byTag.set(baseTag, [...(byTag.get(baseTag) ?? []), asset]);
     }

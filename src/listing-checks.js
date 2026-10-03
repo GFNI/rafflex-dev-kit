@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileSize } from './assets.js';
-import { contentMismatch, mismatchMessage } from './file-content.js';
+import { contentTypesFor, contentVerdict, contentVerdictMessage } from './file-content.js';
 import { defaultImageExtensions, imageRules, readListingImages } from './listing-images.js';
 import { ListingError, parseListing, resolveListingCategories } from './listing.js';
 
@@ -168,10 +168,10 @@ function imageMessages(productDirectory, image, limits, label) {
         findings.push(finding(`${image.path} is ${fileSize(image.size)}; a ${label} can be at most ${fileSize(limits.max_bytes)}. Save it smaller (a JPEG, or fewer pixels).`));
     }
 
-    const mismatch = contentMismatch(image.filename, readFileSync(join(productDirectory, image.path)));
+    const verdict = contentVerdict(image.filename, readFileSync(join(productDirectory, image.path)), contentTypesFor(extensions));
 
-    if (mismatch !== null) {
-        findings.push(finding(mismatchMessage(image.path, mismatch)));
+    if (verdict?.blocking === true) {
+        findings.push(finding(contentVerdictMessage(image.path, verdict)));
     }
 
     return findings;
