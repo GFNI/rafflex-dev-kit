@@ -159,7 +159,7 @@ describe('push', () => {
     test('a push sends only the part that changed: template, options, listing, release notes', async () => {
         const { root, link, path, directory } = await syncedProduct('only-changes');
 
-        writeFileSync(join(directory, 'template.twig'), '<p>{{ play_count }} left</p>\n');
+        writeFileSync(join(directory, 'template.twig'), '<p>{{ play_count }} left {{ options.heading }}</p>\n');
 
         const templatePush = await kit(['push', path, link], root);
         const templateBody = marketplace.pushes().at(-1)?.body;

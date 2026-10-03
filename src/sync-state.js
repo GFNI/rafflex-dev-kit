@@ -15,11 +15,12 @@ import { readTemplate } from './workspace.js';
  *
  * - template: sha256 of the template text
  * - options: sha256 of sorted key JSON of the option overrides as the
- *   platform stores them: locally, options.json filtered against the local
- *   template (keys it does not read, choices on a field that cannot take
- *   them, child keys such as slides.title, and categories dropped); on the
- *   remote side, the overrides the platform reports, which it already
- *   filtered when it stored them
+ *   platform stores them, filtered against the template they sit beside
+ *   (keys it does not read, choices on a field that cannot take them,
+ *   child keys such as slides.title, and categories dropped): options.json
+ *   against the local template, the draft's overrides against the draft's
+ *   template. The live version's overrides, recorded without their
+ *   template, are taken as the platform stored them
  * - listing: sha256 of the canonical listing (see listing.js)
  * - assets: sha256 of each file, compared with remote.media by tag, except
  *   approved libraries, which match by hash and then library name (a
@@ -86,8 +87,9 @@ export function templateHash(template) {
  * left out first, so options.json with an entry for a key the template
  * does not read hashes the same as what the platform sends back after the
  * push (otherwise every plan would report the options changed, and every
- * push would resend them). Without a template (the remote side, already
- * stored) only the template independent normalisation applies.
+ * push would resend them). Both sides are filtered with the kit's own
+ * inference, so they agree even where it reads a field differently.
+ * Without a template only the template independent normalisation applies.
  *
  * @param {unknown} overrides
  * @param {string|null} [template]
@@ -422,7 +424,7 @@ export function remoteFromProduct(product, now = new Date()) {
             revision: Number.isInteger(draft.revision) ? draft.revision : null,
             submitted: draft.submitted === true,
             template_sha256: typeof draft.template === 'string' ? templateHash(draft.template) : null,
-            option_overrides_sha256: optionOverridesHash(draft.option_overrides),
+            option_overrides_sha256: optionOverridesHash(draft.option_overrides, typeof draft.template === 'string' ? draft.template : null),
         },
         listing_sha256: listingHash(listingFromProduct(product)),
         latest_review: product.latest_review !== null && typeof product.latest_review === 'object' ? product.latest_review : null,
