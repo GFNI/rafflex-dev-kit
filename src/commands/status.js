@@ -1,5 +1,5 @@
 import { refreshAgentsMarkdown, serverAgentsMarkdown } from '../agents-md.js';
-import { gitState } from '../git.js';
+import { currentBranch, gitState } from '../git.js';
 import { readCachedDocuments } from '../remote.js';
 import { compareWithRemote, isRemoteStale, readLocalState } from '../sync-state.js';
 import { loadWorkspace, selectProducts } from '../workspace.js';
@@ -28,8 +28,9 @@ function remoteSummary(remote) {
 /**
  * @param {import('../workspace.js').Product} product
  * @param {{rules?: any, libraries?: any}} documents
+ * @param {string|null} [branch] The branch the workspace is on, to warn when the last sync was recorded on another.
  */
-export function productStatus(product, documents) {
+export function productStatus(product, documents, branch = null) {
     const remote = product.manifest.remote;
     const local = readLocalState(product, documents);
     const changes = compareWithRemote(local, remote);
@@ -67,7 +68,26 @@ export function productStatus(product, documents) {
             any: changes.any,
         },
         problems,
+        warnings: branchWarnings(remote, branch),
     };
+}
+
+/**
+ * One draft per product means one line of history: warn when the
+ * workspace is not on the branch the last sync was recorded on.
+ *
+ * @param {import('../workspace.js').ProductRemote|null} remote
+ * @param {string|null} branch
+ * @returns {string[]}
+ */
+function branchWarnings(remote, branch) {
+    const syncedOn = /** @type {any} */ (remote)?.branch ?? null;
+
+    if (syncedOn === null || branch === null || syncedOn === branch) {
+        return [];
+    }
+
+    return [`The last sync was recorded on the ${syncedOn} branch, but the workspace is on ${branch}. Switch back before pushing, or read the product again with get_product and run synced.`];
 }
 
 /**
@@ -123,6 +143,10 @@ function statusLines(status) {
         lines.push(`  problem: ${problem}`);
     }
 
+    for (const warning of status.warnings) {
+        lines.push(`  warning: ${warning}`);
+    }
+
     return lines;
 }
 
@@ -135,7 +159,8 @@ function statusLines(status) {
  * and the marketplace's guidance changed (see agents-md.js): the only
  * network request status makes, and it falls back to the cache.
  *
- * JSON: `{workspace, git: {installed, repository}, agents_md, products: [...]}`.
+ * JSON: `{workspace, git: {installed, repository, branch}, agents_md, products: [...]}`;
+ * each product carries `warnings` (for example a sync recorded on another branch).
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -153,8 +178,10 @@ export async function runStatusCommand(context) {
     }
 
     const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries']);
-    const statuses = products.map((product) => productStatus(product, documents));
-    const git = gitState(workspace.root);
+    const state = gitState(workspace.root);
+    const branch = state.repository ? currentBranch(workspace.root) : null;
+    const git = { ...state, branch };
+    const statuses = products.map((product) => productStatus(product, documents, branch));
     let agentsMd;
 
     try {

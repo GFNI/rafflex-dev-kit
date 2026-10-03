@@ -1,23 +1,20 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { agentsFilename, agentsHash } from '../agents-md.js';
-import { commitAll, isGitInstalled, isInsideRepository, runGit } from '../git.js';
+import { commitAll, ensureIgnored, isGitInstalled, isInsideRepository, runGit } from '../git.js';
 import { loadDocuments, resolveBaseUrl } from '../remote.js';
 import { assetTypesFrom, findWorkspaceRoot, WorkspaceFormat, workspaceFilename } from '../workspace.js';
 import { fail, messageOf, writeJson } from './output.js';
 
 export const initialCommitMessage = 'Set up Rafflex workspace';
 
-const gitignoreContents = `# The Rafflex dev kit's rules cache
-.rafflex/
-`;
 
 /** Used only when the marketplace's skeletons predate the workspace guidance. */
 export const fallbackAgentsMarkdown = `# Rafflex workspace
 
 This folder is a Rafflex marketplace workspace: every game and block the creator sells, one folder per product under games/ and blocks/.
 
-Run \`npx @rafflex/dev status\` first, then follow the workspace guide at https://marketplace.rafflex.io/llms.txt and https://marketplace.rafflex.io/docs/dev-kit.md.
+Run \`npx @rafflex/dev status\` first, run \`npx @rafflex/dev verify <product>\` before every push, then follow the workspace guide at https://marketplace.rafflex.io/llms.txt and https://marketplace.rafflex.io/docs/dev-kit.md.
 `;
 
 export const fallbackClaudeMarkdown = '@AGENTS.md\n';
@@ -130,15 +127,12 @@ export async function runInitCommand(context) {
     record(writeIfMissing(join(cwd, agentsFilename), agentsContents), agentsFilename);
     record(writeIfMissing(join(cwd, 'CLAUDE.md'), claudeMarkdown), 'CLAUDE.md');
 
-    const gitignorePath = join(cwd, '.gitignore');
+    const ignored = ensureIgnored(cwd);
 
-    if (writeIfMissing(gitignorePath, gitignoreContents)) {
+    if (ignored.created) {
         record(true, '.gitignore');
-    } else if (!readFileSync(gitignorePath, 'utf8').split(/\r?\n/).some((line) => /^\/?\.rafflex\/?$/.test(line.trim()))) {
-        const current = readFileSync(gitignorePath, 'utf8');
-
-        writeFileSync(gitignorePath, `${current}${current === '' || current.endsWith('\n') ? '' : '\n'}${gitignoreContents}`);
-        created.push('.gitignore (added .rafflex/)');
+    } else if (ignored.added.length > 0) {
+        created.push(`.gitignore (added ${ignored.added.join(', ')})`);
     } else {
         record(false, '.gitignore');
     }

@@ -1,5 +1,6 @@
 import { compilePatterns, decodeEscapes, matchPatterns } from './banned-patterns.js';
 import { availablePlayCounts, gameContext, nearestPlayCount } from './context.js';
+import { gameTwigLogicIssues, playthroughHookIssues } from './game-rules.js';
 import { scriptViolations, sourceScriptViolations } from './script-rules.js';
 import { compileTemplate, lineAt, renderTemplate, TemplateRenderError } from './twig-engine.js';
 import { lintTemplate } from './twig-lint.js';
@@ -17,7 +18,16 @@ import { lintTemplate } from './twig-lint.js';
  */
 
 /** Codes the marketplace reports without blocking submission. */
-export const nonBlockingCodes = ['option_warning', 'unknown_file_tag'];
+export const platformWarningCodes = ['option_warning', 'unknown_file_tag', 'game_twig_logic', 'playthrough_hooks_missing'];
+
+/**
+ * The kit's own quality warnings (PRD 41): the house style, ESLint, the
+ * HTML validator, and browser findings that teach rather than block.
+ */
+export const kitWarningCodes = ['unformatted', 'script_lint', 'alpine_state', 'markup', 'console_error', 'request_failed'];
+
+/** Every code that is reported without blocking. */
+export const nonBlockingCodes = [...platformWarningCodes, ...kitWarningCodes];
 
 export const verdictNote = "The marketplace's own check is the final verdict.";
 
@@ -110,6 +120,7 @@ export function scenarioValues(documents) {
  * @property {number} [playCount] The play count scenarios render at (the server's check_template default when omitted).
  * @property {'all'|'current'} [renderedPlayCounts] Scan the rendered output at every available play count (as the server does) or only the current one.
  * @property {string} [templateName]
+ * @property {string} [type] The asset type; a game also gets the game warnings.
  */
 
 /**
@@ -200,6 +211,10 @@ export function runChecks(input) {
     }
 
     issues.push(...safetyIssues, ...renderFailures, ...extraLintIssues(template, rules, issue), ...unknownTagIssues(template, files, issue));
+
+    if (input.type === 'game') {
+        issues.push(...[...gameTwigLogicIssues(template, rules.game_rules), ...playthroughHookIssues(template, rules.game_rules)].map((found) => issue(found)));
+    }
 
     for (const refusal of input.assetRefusals ?? []) {
         issues.push(issue({ code: 'safety', message: refusal.message, file: refusal.file }));

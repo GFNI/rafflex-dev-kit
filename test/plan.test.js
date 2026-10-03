@@ -44,9 +44,12 @@ describe('plan', () => {
         writeFileSync(join(directory, 'template.twig'), template);
         writeFileSync(join(directory, 'assets', 'star.png'), 'star bytes');
 
-        const { code, output } = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const { code, output: planned } = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const { ready, verify, ...output } = planned;
 
         assert.equal(code, 0);
+        assert.equal(ready, true);
+        assert.deepEqual({ ...verify, warning_count: undefined }, { ready: true, browser_tests: 'skipped', blocking_issues: [], warning_count: undefined });
         assert.deepEqual(output, {
             product: 'games/spin-to-win',
             slug: 'spin-to-win',
@@ -68,9 +71,14 @@ describe('plan', () => {
         assert.match(human.stdout, /3\. get_product, then pipe it to npx @rafflex\/dev synced games\/spin-to-win/);
         assert.doesNotMatch(human.stdout, /update_product_details|create_product/);
 
+        const formatted = readFileSync(join(directory, 'template.twig'), 'utf8');
+
+        assert.notEqual(formatted, template);
+        assert.match(formatted, /<img src="\{\{ files\['star'\] \}\}" \/>\n$/);
+
         const pushed = {
             ...bundle.product,
-            draft: { ...bundle.product.draft, template, revision: 9 },
+            draft: { ...bundle.product.draft, template: formatted, revision: 9 },
             media: [...bundle.product.media, { tag: 'star', filename: 'star.png', kind: 'image', mime_type: 'image/png', size_bytes: 10, sha256: sha('star bytes'), url: 'https://media.example/star.png', library: null }],
         };
         const synced = await runJson(['synced', 'spin-to-win'], { cwd: root, input: JSON.stringify({ structuredContent: pushed }) });

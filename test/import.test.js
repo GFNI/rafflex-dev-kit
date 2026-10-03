@@ -37,7 +37,7 @@ describe('import', () => {
         const directory = join(root, 'games', 'spin-to-win');
 
         assert.equal(code, 0, JSON.stringify(output));
-        assert.deepEqual({ ...output, assets: undefined }, {
+        assert.deepEqual({ ...output, assets: undefined, git: undefined }, {
             product: 'games/spin-to-win',
             slug: 'spin-to-win',
             type: 'game',
@@ -48,7 +48,9 @@ describe('import', () => {
             files: ['template.twig', 'options.json', 'listing.md', 'CHANGELOG.md'],
             assets: undefined,
             skipped: [{ filename: 'untagged.png', reason: 'It has no tag, so no template can use it.' }],
+            git: undefined,
         });
+        assert.equal(output.git.repository, false);
         assert.deepEqual(output.assets.map((/** @type {any} */ asset) => [asset.path, asset.tag]), [
             ['assets/background.png', 'background'],
             ['assets/logo.png', 'logo'],

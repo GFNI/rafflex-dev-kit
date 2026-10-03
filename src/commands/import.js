@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { extname, join, resolve } from 'node:path';
 import { defaultTagFor } from '../assets.js';
 import { readAll } from '../cli.js';
+import { commitProduct } from '../git.js';
 import { formatListing } from '../listing.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { bumpVersion, isVersion } from '../semver.js';
@@ -15,6 +16,7 @@ import {
     loadWorkspace,
     optionsFilename,
     templateFilename,
+    testsDirectoryName,
     withManifest,
     writeProductJson,
 } from '../workspace.js';
@@ -284,7 +286,11 @@ function describeChanges(changes) {
  * refusal lists its local changes since the last sync. The folder is built
  * beside the target and swapped in only once everything downloaded.
  *
- * JSON: `{product, slug, type, title, version, template_source, replaced, files, assets, skipped}`.
+ * With git, the product folder is committed as "Import <slug> from the
+ * marketplace", or "Revert <slug> to <x.y.z> as <version>" when the draft
+ * was started by revert_to_version. A replaced folder keeps its tests/.
+ *
+ * JSON: `{product, slug, type, title, version, template_source, replaced, files, assets, skipped, git}`.
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -370,6 +376,11 @@ export async function runImportCommand(context) {
 
     if (existing !== null) {
         const aside = join(typeDirectory, `.${slug}.replaced-${process.pid}`);
+        const creatorTests = join(existing.directory, testsDirectoryName);
+
+        if (existsSync(creatorTests) && !existsSync(join(temporary, testsDirectoryName))) {
+            renameSync(creatorTests, join(temporary, testsDirectoryName));
+        }
 
         rmSync(aside, { recursive: true, force: true });
         renameSync(existing.directory, aside);
@@ -378,6 +389,14 @@ export async function runImportCommand(context) {
         replacedFrom = existing.path;
     } else {
         renameSync(temporary, target);
+    }
+
+    const revertedFrom = typeof bundle.product.draft?.reverted_from === 'string' ? bundle.product.draft.reverted_from : null;
+    const message = revertedFrom === null ? `Import ${slug} from the marketplace` : `Revert ${slug} to ${revertedFrom} as ${written.version}`;
+    const git = commitProduct(workspace.root, existing !== null && existing.directory !== target ? [existing.directory, target] : target, message);
+
+    if (git.error !== null) {
+        warnings = [...warnings, git.error];
     }
 
     const result = {
@@ -391,6 +410,7 @@ export async function runImportCommand(context) {
         files: written.files,
         assets: written.assets,
         skipped: written.skipped,
+        git,
     };
 
     if (options.json) {
@@ -409,7 +429,7 @@ export async function runImportCommand(context) {
 
     const source = bundle.template_source === 'live' ? 'the live version (there is no draft)' : 'the draft';
 
-    stdout.write(`${replacedFrom === null ? 'Imported' : `Replaced ${replacedFrom} with`} ${path} (${assetType.label.toLowerCase()} "${result.title}", version ${written.version}, template from ${source})\n${[...written.files, ...written.assets.map((asset) => asset.path)].map((file) => `  ${path}/${file}`).join('\n')}\n\nNext: npx @rafflex/dev status ${slug}\n`);
+    stdout.write(`${replacedFrom === null ? 'Imported' : `Replaced ${replacedFrom} with`} ${path} (${assetType.label.toLowerCase()} "${result.title}", version ${written.version}, template from ${source})${git.committed ? `, committed "${message}"` : ''}\n${[...written.files, ...written.assets.map((asset) => asset.path)].map((file) => `  ${path}/${file}`).join('\n')}\n\nNext: npx @rafflex/dev status ${slug}\n`);
 
     return 0;
 }

@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { isBlocking } from '../checker.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { compareWithRemote, isRemoteStale, readLocalState } from '../sync-state.js';
-import { loadWorkspace, selectProduct } from '../workspace.js';
+import { loadWorkspace, selectProduct, withManifest } from '../workspace.js';
+import { verifyProducts } from './verify.js';
 import { unreleasedNotes } from './release.js';
 import { fail, messageOf, writeJson } from './output.js';
 
@@ -158,6 +160,55 @@ function removedAssetLines(removed) {
 }
 
 /**
+ * @typedef {{ready: boolean, browser_tests: 'passed'|'failed'|'skipped'|null, blocking_issues: (import('../checker.js').Issue & {screenshot?: string})[], warning_count: number, error?: string}} PlanVerify
+ */
+
+/**
+ * Run verify on the product before planning (PRD 41): the product is not
+ * ready while anything blocks, and plan says so.
+ *
+ * @param {import('../workspace.js').Workspace} workspace
+ * @param {import('../workspace.js').Product} product
+ * @returns {Promise<PlanVerify>}
+ */
+async function verifyBeforePlan(workspace, product) {
+    try {
+        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl });
+        const [result] = await verifyProducts({ workspace: withManifest(workspace, loaded.manifest), loaded, products: [product] });
+
+        if (result.check.error !== undefined) {
+            return { ready: false, browser_tests: null, blocking_issues: [], warning_count: 0, error: result.check.error };
+        }
+
+        return { ready: result.ready, browser_tests: result.browser_tests, blocking_issues: result.issues.filter(isBlocking), warning_count: result.warnings };
+    } catch (error) {
+        return { ready: false, browser_tests: null, blocking_issues: [], warning_count: 0, error: `verify could not run: ${messageOf(error)}` };
+    }
+}
+
+/**
+ * @param {PlanVerify} verify
+ * @param {string} name
+ * @returns {string[]}
+ */
+function verifyPlanLines(verify, name) {
+    if (verify.error !== undefined) {
+        return [`  Not ready to push: ${verify.error}. Run npx @rafflex/dev verify ${name} once it can run.`];
+    }
+
+    if (!verify.ready) {
+        return [
+            `  Not ready to push: ${verify.blocking_issues.length} blocking ${verify.blocking_issues.length === 1 ? 'issue' : 'issues'}. Fix them, then run plan again:`,
+            ...verify.blocking_issues.map((issue) => `    [${issue.code}]${issue.line ? ` line ${issue.line}` : ''}${issue.scenario ? ` scenario ${issue.scenario}` : ''}: ${issue.message}`),
+        ];
+    }
+
+    const browser = verify.browser_tests === 'skipped' ? 'browser tests skipped, install Playwright with npx @rafflex/dev test --install after asking' : 'browser tests passed';
+
+    return [`  Verified: ready to push (${browser}${verify.warning_count > 0 ? `, ${verify.warning_count} ${verify.warning_count === 1 ? 'warning' : 'warnings'} to review with verify` : ''}).`];
+}
+
+/**
  * `plan <product>`: what to push, as data, compared with the remote
  * snapshot `synced` last recorded. The AI carries it out through the
  * marketplace tools, then reads the product again and runs `synced`.
@@ -168,6 +219,11 @@ function removedAssetLines(removed) {
  * removed_assets: [{tag, filename}], release_notes, version}`.
  * `removed_assets` is media on the marketplace with no local file; the
  * kit never removes it and `nothing_to_push` ignores it.
+ *
+ * verify runs first (format, check, test), so its formatting is part of
+ * the plan. The JSON adds `ready` and `verify: {ready, browser_tests,
+ * blocking_issues, warning_count, error?}`; while not ready the prose
+ * lists the blocking issues instead of the steps, and the exit code is 1.
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -184,6 +240,7 @@ export async function runPlanCommand(context) {
         return fail(context, messageOf(error), 2);
     }
 
+    const verify = await verifyBeforePlan(workspace, product);
     const { documents, warnings } = await assetDocuments(workspace);
     let built;
 
@@ -202,12 +259,20 @@ export async function runPlanCommand(context) {
     }
 
     if (options.json) {
-        writeJson(stdout, built.plan);
+        writeJson(stdout, { ...built.plan, ready: verify.ready, verify });
 
-        return 0;
+        return verify.ready ? 0 : 1;
     }
 
-    stdout.write(`${planLines(built.plan, product).join('\n')}\n`);
+    const lines = planLines(built.plan, product);
 
-    return 0;
+    if (verify.ready) {
+        lines.splice(1, 0, ...verifyPlanLines(verify, product.slug ?? product.path));
+    } else {
+        lines.splice(1, lines.length - 1, ...lines.slice(1).filter((line) => !/^ {2}\d+\. /.test(line)), ...verifyPlanLines(verify, product.slug ?? product.path));
+    }
+
+    stdout.write(`${lines.join('\n')}\n`);
+
+    return verify.ready ? 0 : 1;
 }

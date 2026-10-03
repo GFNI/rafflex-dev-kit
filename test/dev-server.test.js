@@ -158,7 +158,9 @@ describe('dev server', () => {
         try {
             const problems = JSON.parse((await get(`${productUrl}__rafflex/problems?scenario=mixed&play_count=5`)).body);
 
-            assert.deepEqual(problems.issues.map((issue) => issue.message), ['External network calls are not allowed (fetch).']);
+            assert.deepEqual(problems.issues.filter((issue) => !problems.warning_codes.includes(issue.code)).map((issue) => issue.message), ['External network calls are not allowed (fetch).']);
+            assert.ok(problems.issues.some((issue) => issue.code === 'unformatted'));
+            assert.ok(problems.issues.some((issue) => issue.code === 'game_twig_logic' && issue.line === 1));
             assert.deepEqual(problems.warnings, ['a warning']);
             assert.equal(problems.note, "The marketplace's own check is the final verdict.");
             assert.deepEqual(problems.files.map((file) => file.tag).sort(), ['background', 'prize-box', 'three']);

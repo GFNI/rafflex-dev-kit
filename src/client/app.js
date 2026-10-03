@@ -23,7 +23,7 @@ const elements = {
     note: document.getElementById('verdict-note'),
 };
 
-const nonBlockingCodes = ['option_warning', 'unknown_file_tag'];
+let nonBlockingCodes = ['option_warning', 'unknown_file_tag', 'game_twig_logic', 'playthrough_hooks_missing', 'unformatted', 'script_lint', 'alpine_state', 'markup'];
 const params = new URLSearchParams(location.search);
 const state = {
     config: null,
@@ -60,6 +60,7 @@ async function refreshProblems() {
         const payload = await response.json();
 
         state.checkIssues = payload.issues ?? [];
+        nonBlockingCodes = payload.warning_codes ?? nonBlockingCodes;
         state.warnings = payload.warnings ?? [];
         state.note = payload.note ?? '';
         state.error = payload.error ?? null;

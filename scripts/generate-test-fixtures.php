@@ -134,4 +134,24 @@ foreach ($kitCases as [$name, $type, $scenario, $playCount, $caseFiles]) {
 
 file_put_contents("{$kitRoot}/test/fixtures/kit-fixtures.json", json_encode(['fixtures' => $kitFixtures], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n");
 
+// The game warnings (PRD 41) as the platform's own check reports them on
+// the marketplace's shared lint fixtures, so the kit's port is held to
+// the same codes, lines, and messages.
+$lintDirectory = "{$marketplace}/resources/content/dev-kit/lint-fixtures";
+$lintCodes = ['game_twig_logic', 'playthrough_hooks_missing'];
+$lintFixtures = [];
+
+foreach (json_decode(file_get_contents("{$lintDirectory}/inputs.json"), true, flags: JSON_THROW_ON_ERROR) as $input) {
+    $template = file_get_contents("{$lintDirectory}/{$input['name']}.twig");
+    $issues = app(App\Services\TemplateCheck::class)->check($template, type: App\Enums\AssetType::from($input['type']))->toArray()['issues'];
+    $lintFixtures[] = [
+        'name' => $input['name'],
+        'type' => $input['type'],
+        'template' => $template,
+        'issues' => array_values(array_filter($issues, fn (array $issue): bool => in_array($issue['code'], $lintCodes, true))),
+    ];
+}
+
+file_put_contents("{$out}/platform-lint.json", json_encode(['fixtures' => $lintFixtures], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n");
+
 echo 'Wrote '.(count($documents) + 1).' documents and '.count($documents['fixtures']['fixtures'])." fixtures to {$out}\n";

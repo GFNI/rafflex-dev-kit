@@ -3,7 +3,8 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { scanAssets } from './assets.js';
-import { runChecks, scenarioValues, verdictNote } from './checker.js';
+import { nonBlockingCodes, runChecks, scenarioValues, verdictNote } from './checker.js';
+import { qualityIssues } from './quality.js';
 import { productStatus } from './commands/status.js';
 import { blockContext, gameContext } from './context.js';
 import { cspHeader, frameDocument, localCspDirectives } from './preview.js';
@@ -481,7 +482,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
      * @param {URL} url
      * @param {import('node:http').ServerResponse} response
      */
-    const serveProblems = (product, url, response) => {
+    const serveProblems = async (product, url, response) => {
         const { scenario, playCount } = selectionFrom(url);
         let payload;
 
@@ -494,10 +495,14 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
                 documents,
                 playCount,
                 renderedPlayCounts: 'current',
+                type: product.type,
             });
+
+            issues.push(...await qualityIssues({ type: product.type, template, files: scan.files, documents }));
 
             payload = {
                 issues,
+                warning_codes: nonBlockingCodes,
                 warnings: loaded.warnings,
                 skipped_patterns: skippedPatterns,
                 note: verdictNote,
@@ -506,7 +511,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
                 files: scan.assets.map((asset) => ({ tag: asset.tag, path: `assets/${asset.path}`, kind: asset.kind, library: asset.library?.name ?? null })),
             };
         } catch (error) {
-            payload = { issues: [], warnings: loaded.warnings, error: String(/** @type {Error} */ (error).message), note: verdictNote };
+            payload = { issues: [], warning_codes: nonBlockingCodes, warnings: loaded.warnings, error: String(/** @type {Error} */ (error).message), note: verdictNote };
         }
 
         sendJson(response, payload);
@@ -674,7 +679,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
 
                 return;
             case '__rafflex/problems':
-                serveProblems(product, url, response);
+                serveProblems(product, url, response).catch(() => send(response, 500, 'The check failed.'));
 
                 return;
             case '__rafflex/events':

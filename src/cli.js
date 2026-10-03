@@ -1,14 +1,18 @@
 import { commandNamed, devKitCommands } from './command-list.js';
 import { runCheckCommand } from './commands/check.js';
 import { runDevCommand } from './commands/dev.js';
+import { runFormatCommand } from './commands/format.js';
 import { runInitCommand } from './commands/init.js';
 import { runImportCommand } from './commands/import.js';
 import { runNewCommand } from './commands/new.js';
 import { fail } from './commands/output.js';
 import { runPlanCommand } from './commands/plan.js';
 import { runReleaseCommand } from './commands/release.js';
+import { runRestoreCommand } from './commands/restore.js';
 import { runStatusCommand } from './commands/status.js';
 import { runSyncedCommand } from './commands/synced.js';
+import { runTestCommand } from './commands/test.js';
+import { runVerifyCommand } from './commands/verify.js';
 import { runVersionCommand } from './commands/version.js';
 import { kitVersion } from './version.js';
 
@@ -29,7 +33,10 @@ product folder it defaults to that product.
 
 Options
   --json              Print the result as JSON (every command)
-  --all               check: every product in the workspace
+  --all               format, check, test, verify: every product in the workspace
+  --check             format: report templates to format without writing
+  --install           test: install Playwright and Chromium into .rafflex/ (large, ask first)
+  --yes               restore: confirm discarding the unpushed changes
   --play-count N      check: plays per scenario when rendering (default from the rules)
   --verbose           check: also list rules the kit cannot apply locally
   --type game|block   new: the product type, instead of the first argument
@@ -61,6 +68,9 @@ Docs: https://marketplace.rafflex.io/docs/dev-kit.md`;
  * @property {boolean} open
  * @property {boolean} verbose
  * @property {boolean} force
+ * @property {boolean} check
+ * @property {boolean} install
+ * @property {boolean} yes
  * @property {boolean} help
  * @property {boolean} version
  */
@@ -82,7 +92,7 @@ export class UsageError extends Error {}
  */
 export function parseArguments(argv) {
     /** @type {CliOptions} */
-    const options = { command: 'dev', positionals: [], all: false, json: false, open: true, verbose: false, force: false, help: false, version: false };
+    const options = { command: 'dev', positionals: [], all: false, json: false, open: true, verbose: false, force: false, check: false, install: false, yes: false, help: false, version: false };
     /** @type {string[]} */
     const positional = [];
     let onlyPositionals = false;
@@ -142,6 +152,15 @@ export function parseArguments(argv) {
             case '--force':
                 options.force = true;
                 break;
+            case '--check':
+                options.check = true;
+                break;
+            case '--install':
+                options.install = true;
+                break;
+            case '--yes':
+                options.yes = true;
+                break;
             case '--type':
                 options.type = value();
                 break;
@@ -182,8 +201,20 @@ export function parseArguments(argv) {
             throw new UsageError(`Missing arguments for ${options.command}. Usage: ${usageText}`);
         }
 
-        if (options.all && options.command !== 'check') {
-            throw new UsageError('--all only applies to check.');
+        if (options.all && !['format', 'check', 'test', 'verify'].includes(options.command)) {
+            throw new UsageError('--all only applies to format, check, test, and verify.');
+        }
+
+        if (options.check && options.command !== 'format') {
+            throw new UsageError('--check only applies to format.');
+        }
+
+        if (options.install && options.command !== 'test') {
+            throw new UsageError('--install only applies to test.');
+        }
+
+        if (options.yes && options.command !== 'restore') {
+            throw new UsageError('--yes only applies to restore.');
         }
 
         if (options.force && options.command !== 'import') {
@@ -264,8 +295,16 @@ export async function main(argv, io = {}) {
             return runInitCommand(context);
         case 'new':
             return runNewCommand(context);
+        case 'format':
+            return runFormatCommand(context);
         case 'check':
             return runCheckCommand(context);
+        case 'test':
+            return runTestCommand(context);
+        case 'verify':
+            return runVerifyCommand(context);
+        case 'restore':
+            return runRestoreCommand(context);
         case 'status':
             return runStatusCommand(context);
         case 'version':

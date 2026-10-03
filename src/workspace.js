@@ -23,6 +23,10 @@ export const optionsFilename = 'options.json';
 export const listingFilename = 'listing.md';
 export const changelogFilename = 'CHANGELOG.md';
 export const assetsDirectoryName = 'assets';
+/** The creator's own browser specs (PRD 41), committed, never pushed. */
+export const testsDirectoryName = 'tests';
+/** Browser test output (PRD 41), git ignored, never pushed. */
+export const resultsDirectoryName = '.results';
 
 /** The workspace format this kit writes and understands. */
 export const WorkspaceFormat = 1;

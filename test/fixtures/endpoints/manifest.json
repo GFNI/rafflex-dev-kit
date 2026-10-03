@@ -1,7 +1,7 @@
 {
     "contract": 1,
-    "version": "c6f6aab4e55c",
-    "generated_at": "2026-10-02T22:30:36+00:00",
+    "version": "7f550c69a11b",
+    "generated_at": "2026-10-03T10:28:19+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
@@ -10,9 +10,9 @@
         "fixtures": "__BASE_URL__/dev-kit/fixtures.json"
     },
     "versions": {
-        "rules": "8262dbb1ac64",
-        "contexts": "cbf0c3ba030a",
-        "skeletons": "9fe4564c514a",
+        "rules": "bc13b4388267",
+        "contexts": "f53ed4ad5d7e",
+        "skeletons": "a58d93471afb",
         "libraries": "c052391c893d",
         "fixtures": "744e2c3c4f86"
     },
@@ -44,7 +44,7 @@
         {
             "name": "import",
             "usage": "npx @rafflex/dev import <bundle>",
-            "summary": "Unpacks a product export bundle into its type folder, or refreshes an existing folder.",
+            "summary": "Unpacks a product export bundle into its type folder, or refreshes an existing folder, and commits it.",
             "json": true
         },
         {
@@ -54,9 +54,27 @@
             "json": true
         },
         {
+            "name": "format",
+            "usage": "npx @rafflex/dev format [<product>...|--all]",
+            "summary": "Formats the template in the house style, never touching Twig. --check reports without writing.",
+            "json": true
+        },
+        {
             "name": "check",
             "usage": "npx @rafflex/dev check [<product>...|--all]",
-            "summary": "Runs the platform's rules on the named products, or on every product with --all.",
+            "summary": "Runs the platform's rules, the lint warnings, and a format check on the named products, or on every product with --all.",
+            "json": true
+        },
+        {
+            "name": "test",
+            "usage": "npx @rafflex/dev test [<product>...|--all]",
+            "summary": "Plays every scenario in headless Chromium at phone, tablet, and desktop widths, plays games through, and runs the specs in tests/. Needs Playwright (test --install).",
+            "json": true
+        },
+        {
+            "name": "verify",
+            "usage": "npx @rafflex/dev verify [<product>...|--all]",
+            "summary": "Runs format, then check, then test when Playwright is installed. Run it before every push and fix every blocking issue.",
             "json": true
         },
         {
@@ -68,13 +86,13 @@
         {
             "name": "plan",
             "usage": "npx @rafflex/dev plan <product>",
-            "summary": "Lists exactly what to push as data: template, options, listing, assets, and release notes.",
+            "summary": "Runs verify, then lists exactly what to push as data: template, options, listing, assets, and release notes. Not ready while verify has blocking issues.",
             "json": true
         },
         {
             "name": "synced",
             "usage": "npx @rafflex/dev synced <product>",
-            "summary": "Records a get_product result read from standard input as the product's last known remote state.",
+            "summary": "Records a get_product result read from standard input as the product's last known remote state, and commits the product folder.",
             "json": true
         },
         {
@@ -87,6 +105,12 @@
             "name": "version",
             "usage": "npx @rafflex/dev version <product> <patch|minor|major|x.y.z>",
             "summary": "Sets the next version, and is refused while the current version is in review.",
+            "json": true
+        },
+        {
+            "name": "restore",
+            "usage": "npx @rafflex/dev restore <product> last-push",
+            "summary": "Returns a product folder to its last confirmed push, discarding unpushed work (needs --yes). Reverting a shipped version is revert_to_version on the marketplace.",
             "json": true
         }
     ]

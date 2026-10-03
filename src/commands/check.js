@@ -1,6 +1,7 @@
 import { scanAssets } from '../assets.js';
 import { isBlocking, runChecks, verdictNote } from '../checker.js';
 import { assetUrl } from '../dev-server.js';
+import { qualityIssues } from '../quality.js';
 import { loadDocuments } from '../remote.js';
 import { loadWorkspace, readTemplate, selectProducts, withManifest } from '../workspace.js';
 import { messageOf, writeJson } from './output.js';
@@ -22,14 +23,16 @@ function formatIssue(issue) {
  */
 
 /**
- * Check one product with already loaded documents.
+ * Check one product with already loaded documents: the platform's rules
+ * (37, plus the game warnings), then the kit's quality warnings (lint and
+ * the house style, PRD 41).
  *
  * @param {import('../workspace.js').Product} product
  * @param {import('../remote.js').LoadedDocuments} loaded
  * @param {number|undefined} requestedPlayCount
- * @returns {{result: ProductCheck, skippedPatterns: string[]}}
+ * @returns {Promise<{result: ProductCheck, skippedPatterns: string[]}>}
  */
-export function checkProduct(product, loaded, requestedPlayCount) {
+export async function checkProduct(product, loaded, requestedPlayCount) {
     const { documents } = loaded;
     let template;
 
@@ -41,7 +44,9 @@ export function checkProduct(product, loaded, requestedPlayCount) {
 
     const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl);
     const playCount = requestedPlayCount ?? documents.contexts.play_count?.default ?? 5;
-    const { issues, skippedPatterns } = runChecks({ template, files: scan.files, assetRefusals: scan.refusals, documents, playCount, renderedPlayCounts: 'all' });
+    const { issues, skippedPatterns } = runChecks({ template, files: scan.files, assetRefusals: scan.refusals, documents, playCount, renderedPlayCounts: 'all', type: product.type });
+
+    issues.push(...await qualityIssues({ type: product.type, template, files: scan.files, documents }));
     const passed = !issues.some(isBlocking);
     const warnings = [...loaded.warnings];
 
@@ -134,7 +139,12 @@ export async function runCheckCommand({ cwd, stdout, stderr, options }) {
         return 2;
     }
 
-    const checks = products.map((product) => checkProduct(product, loaded, options.playCount));
+    const checks = [];
+
+    for (const product of products) {
+        checks.push(await checkProduct(product, loaded, options.playCount));
+    }
+
     const passed = checks.every(({ result }) => result.passed);
 
     if (options.json) {

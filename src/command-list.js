@@ -40,9 +40,30 @@ export const devKitCommands = [
         positionals: { min: 0, max: 1 },
     },
     {
+        name: 'format',
+        usage: 'npx @rafflex/dev format [<product>...|--all]',
+        summary: 'Format templates in the house style. Twig is never touched. --check reports without writing.',
+        json: true,
+        positionals: { min: 0, max: Number.POSITIVE_INFINITY },
+    },
+    {
         name: 'check',
         usage: 'npx @rafflex/dev check [<product>...|--all]',
-        summary: "Check products against the platform's rules: the product you are in, the ones named, or all of them.",
+        summary: "Check products against the platform's rules, the lint warnings, and the house style: the product you are in, the ones named, or all of them.",
+        json: true,
+        positionals: { min: 0, max: Number.POSITIVE_INFINITY },
+    },
+    {
+        name: 'test',
+        usage: 'npx @rafflex/dev test [<product>...|--all]',
+        summary: 'Render every scenario in headless Chromium, play games through, and run the specs in tests/. Needs Playwright: test --install.',
+        json: true,
+        positionals: { min: 0, max: Number.POSITIVE_INFINITY },
+    },
+    {
+        name: 'verify',
+        usage: 'npx @rafflex/dev verify [<product>...|--all]',
+        summary: 'format, then check, then test when Playwright is installed. Run it before every push.',
         json: true,
         positionals: { min: 0, max: Number.POSITIVE_INFINITY },
     },
@@ -56,7 +77,7 @@ export const devKitCommands = [
     {
         name: 'plan',
         usage: 'npx @rafflex/dev plan <product>',
-        summary: 'Print what to push for a product, as data, for your AI to carry out.',
+        summary: 'Run verify, then print what to push for a product, as data, for your AI to carry out.',
         json: true,
         positionals: { min: 0, max: 1 },
     },
@@ -80,6 +101,13 @@ export const devKitCommands = [
         summary: 'Set the version being worked on. Refused while it is in review.',
         json: true,
         positionals: { min: 1, max: 2 },
+    },
+    {
+        name: 'restore',
+        usage: 'npx @rafflex/dev restore <product> last-push',
+        summary: 'Discard unpushed work: return a product folder to its last confirmed push (confirm with --yes).',
+        json: true,
+        positionals: { min: 2, max: 2 },
     },
 ];
 
