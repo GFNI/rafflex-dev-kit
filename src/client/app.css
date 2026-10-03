@@ -163,6 +163,16 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .control span { color: var(--muted); font-size: 13px; }
 select, input[type="number"], input[type="text"] { font: inherit; color: var(--text); background: var(--background); border: 1px solid var(--border-strong); border-radius: var(--radius-small); height: 32px; padding: 0 10px; }
 input[type="number"] { width: 72px; }
+textarea { font: inherit; color: var(--text); background: var(--background); border: 1px solid var(--border-strong); border-radius: var(--radius-small); padding: 6px 10px; resize: vertical; }
+input[type="color"] { width: 48px; height: 32px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-small); background: var(--background); }
+.card.options { display: block; }
+.options summary { cursor: pointer; list-style: none; }
+.options-body { margin-top: 16px; }
+.options summary::-webkit-details-marker { display: none; }
+.option-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.option-fields .wide { grid-column: 1 / -1; }
+.option-fields .field input[type="number"], .option-fields .field input[type="text"], .option-fields .field select, .option-fields .field textarea { width: 100%; box-sizing: border-box; }
+.option-item { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; align-items: end; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-small); }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field span { font-weight: 500; }
 

@@ -652,5 +652,10 @@
                 "message": "Release notes are required when publishing a new version."
             }
         ]
+    },
+    "option_overrides": {
+        "max_label_length": 60,
+        "max_help_length": 200,
+        "max_choices": 20
     }
 }

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isBlocking } from '../checker.js';
 import { lockedAssetRefusals, planListingImageLines, planListingImagesFor } from '../push-plan.js';
+import { suggestedVersionFor, versionSuggestionLines } from '../options/version-suggestion.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { submissionLines, submissionStatus } from '../submission.js';
 import { compareWithRemote, isRemoteStale, readLocalState } from '../sync-state.js';
@@ -92,6 +93,7 @@ export function buildPlan(product, documents, now = Date.now()) {
             listing_images: listingImages,
             refusals: locked,
             submission: submissionStatus(product, documents, local),
+            suggested_version: suggestedVersionFor(product, local.template.text),
         },
         refusals: local.refusals,
     };
@@ -115,6 +117,8 @@ function planLines(plan, product) {
     if (remote?.draft?.submitted === true) {
         lines.push(`  ${remote.draft.version ?? plan.version} is in review and cannot be changed until the decision.`);
     }
+
+    lines.push(...versionSuggestionLines(plan));
 
     if (plan.nothing_to_push) {
         lines.push('  Nothing to push.', ...removedAssetLines(plan.removed_assets), ...planListingImageLines(plan).notes, ...submissionLines(plan.submission));
@@ -229,7 +233,7 @@ function verifyPlanLines(verify, name) {
  * JSON: `{product, slug, nothing_to_push, stale_remote, template: {changed},
  * options: {changed, option_overrides?}, listing: {changed, fields?},
  * assets: [{path, filename, tag, kind, size, mime_type, sha256, change, library?}],
- * removed_assets: [{tag, filename}], release_notes, version}`.
+ * removed_assets: [{tag, filename}], release_notes, version, suggested_version}`.
  * `removed_assets` is media on the marketplace with no local file; the
  * kit never removes it and `nothing_to_push` ignores it.
  *

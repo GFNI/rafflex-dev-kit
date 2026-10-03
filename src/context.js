@@ -1,6 +1,10 @@
+import { inferOptions } from './options/infer.js';
+import { renderOptions } from './options/render-options.js';
+import { resolveOptions, valueLimits } from './options/values.js';
+
 /**
  * Sample contexts from contexts.json, with the project's own `files` map
- * injected and the template's toggles resolved into `options`, as the
+ * injected and the template's options resolved (see options/), as the
  * platform builds a preview or check context.
  *
  * contexts.json publishes the catalogue both types render with (the
@@ -13,44 +17,22 @@
  * stands in for it.
  */
 
-const toggleNamePattern = /^(?:show_|hide_|enable_|is_|has_)|_enabled$/;
-
 /**
  * The toggles a template reads and the value each starts with when a site
- * owner has typed nothing: its literal `|default(true)` or
- * `|default(false)`, otherwise the published `toggle_unset` value for an
- * option whose name follows the toggle convention (show_, hide_, enable_,
- * is_, has_, or ending _enabled). Other options stay unset so the
- * template's own default applies.
+ * owner has typed nothing, from the platform's options inferrer (see
+ * options/infer.js): a literal default, otherwise the published
+ * `toggle_unset`. Other options stay unset so the template's own default
+ * applies.
  *
  * @param {string} template
  * @param {unknown} [toggleUnset]
  * @returns {Record<string, boolean>}
  */
 export function inferToggleDefaults(template, toggleUnset = false) {
-    /** @type {Record<string, boolean>} */
-    const toggles = {};
-    /** @type {Set<string>} */
-    const conventionalNames = new Set();
+    const fields = inferOptions(template).fields.filter((field) => field.type === 'toggle');
+    const limits = { ...valueLimits(), toggle_unset: Boolean(toggleUnset) };
 
-    for (const tag of template.matchAll(/\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g)) {
-        for (const match of tag[0].matchAll(/\boptions\.([A-Za-z_][A-Za-z0-9_]*)(\s*\|\s*default\(\s*(true|false)\s*\))?/g)) {
-            if (match[3] !== undefined) {
-                toggles[match[1]] ??= match[3] === 'true';
-                continue;
-            }
-
-            if (toggleNamePattern.test(match[1])) {
-                conventionalNames.add(match[1]);
-            }
-        }
-    }
-
-    for (const name of conventionalNames) {
-        toggles[name] ??= Boolean(toggleUnset);
-    }
-
-    return toggles;
+    return /** @type {Record<string, boolean>} */ (resolveOptions(fields, {}, null, limits));
 }
 
 /**
@@ -93,10 +75,10 @@ function filesValue(files) {
 }
 
 /**
- * @param {Record<string, boolean>} toggles
+ * @param {Record<string, unknown>} options
  */
-function optionsValue(toggles) {
-    return Object.keys(toggles).length === 0 ? [] : toggles;
+function optionsValue(options) {
+    return Object.keys(options).length === 0 ? [] : options;
 }
 
 /**
@@ -110,40 +92,52 @@ function sharedContext(contexts) {
 }
 
 /**
+ * @typedef {object} OptionSelection
+ * @property {Record<string, unknown>} [options] Option values set (the app's options form or a spec), coerced as the platform coerces a site owner's.
+ * @property {unknown} [overrides] options.json, whose choices narrow what a text option accepts.
+ */
+
+/**
  * A game scenario's context at a play count (the nearest available one
  * when contexts.json does not carry that count), with the catalogue
- * variables, files, and options.
+ * variables (narrowed by a ticked Categories filter), files, and the
+ * resolved options.
  *
  * @param {any} contexts
- * @param {{scenario: string, playCount: number, files: Record<string, string>, template: string}} selection
+ * @param {{scenario: string, playCount: number, files: Record<string, string>, template: string} & OptionSelection} selection
  */
-export function gameContext(contexts, { scenario, playCount, files, template }) {
+export function gameContext(contexts, { scenario, playCount, files, template, options = {}, overrides = null }) {
     const count = nearestPlayCount(contexts, scenario, playCount);
 
     if (count === null) {
         throw new Error(`contexts.json has no sample data for the ${scenario} scenario.`);
     }
 
+    const resolved = renderOptions({ contexts, template, files, shared: sharedContext(contexts), values: options, overrides });
+
     return {
-        ...sharedContext(contexts),
+        ...resolved.shared,
         ...contexts.game[scenario][String(count)],
         files: filesValue(files),
-        options: optionsValue(inferToggleDefaults(template, contexts.block?.options_defaults?.toggle_unset)),
+        options: optionsValue(resolved.options),
     };
 }
 
 /**
- * The block data contract's context (PRD 28), with files and options.
+ * The block data contract's context (PRD 28), with files and the resolved
+ * options.
  *
  * @param {any} contexts
- * @param {{files: Record<string, string>, template: string}} selection
+ * @param {{files: Record<string, string>, template: string} & OptionSelection} selection
  */
-export function blockContext(contexts, { files, template }) {
+export function blockContext(contexts, { files, template, options = {}, overrides = null }) {
+    const resolved = renderOptions({ contexts, template, files, shared: contexts.shared ?? {}, values: options, overrides });
+
     return {
-        ...(contexts.shared ?? {}),
+        ...resolved.shared,
         ...(contexts.block?.context ?? {}),
         files: filesValue(files),
-        options: optionsValue(inferToggleDefaults(template, contexts.block?.options_defaults?.toggle_unset)),
+        options: optionsValue(resolved.options),
     };
 }
 

@@ -17,6 +17,7 @@ import { messageOf, writeJson } from './output.js';
  * @property {import('../browser-test.js').RunRecord[]} runs
  * @property {import('../browser-test.js').PlaythroughRecord[]|null} playthrough Null for blocks and games without the hooks.
  * @property {import('../browser-test.js').CreatorTestRecord[]} creator_tests
+ * @property {import('../browser-test.js').RunRecord[]|null} [buyer_images] The buyer images runs; null for a block or a game that uses no images.
  * @property {string} results       The product's results folder, workspace relative.
  */
 
@@ -82,6 +83,7 @@ export async function testProducts({ workspace, loaded, products }) {
                 runs: run.runs,
                 playthrough: run.playthrough,
                 creator_tests: run.creator_tests,
+                buyer_images: run.buyer_images,
                 results: `${product.path}/${resultsDirectoryName}`,
             };
 
