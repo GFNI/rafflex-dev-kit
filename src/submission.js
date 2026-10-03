@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { unreleasedNotes } from './commands/release.js';
 import { listingImageFindings, listingLimitMessages } from './listing-checks.js';
-import { listingImagesPresent, recordedListingImages } from './listing-images.js';
+import { listingImagesPresent, listingImagesUnknown, recordedListingImages, refreshListingImagesMessage } from './listing-images.js';
 import { readLocalState } from './sync-state.js';
 
 /**
@@ -13,7 +13,9 @@ import { readLocalState } from './sync-state.js';
  * - description: listing.md's Description section is not empty;
  * - categories: listing.md names at least one category;
  * - cover_image and screenshots: listing/ holds them, or the marketplace
- *   already has them;
+ *   already has them. When the recorded state does not say which images
+ *   the marketplace has (synced by an older kit), the fix is to refresh
+ *   that state with `synced`, not to capture images it may already have;
  * - changelog (`applies: "update"`, once a version is live): the Unreleased
  *   notes in CHANGELOG.md.
  *
@@ -41,6 +43,7 @@ export function submissionStatus(product, documents, local = readLocalState(prod
     const remote = product.manifest.remote;
     const fields = 'fields' in local.listing ? local.listing.fields : null;
     const images = listingImagesPresent(local.listing_images, recordedListingImages(remote));
+    const unknownImages = listingImagesUnknown(remote);
     const liveVersion = remote?.live_version ?? null;
     const name = product.slug ?? product.path;
     /** @type {MissingRequirement[]} */
@@ -71,15 +74,14 @@ export function submissionStatus(product, documents, local = readLocalState(prod
 
                 break;
             case 'cover_image':
-                if (!images.cover) {
-                    missing.push({ ...entry, fix: `npx @rafflex/dev capture ${name}` });
+            case 'screenshots':
+                if (requirement.key === 'cover_image' ? images.cover : images.screenshots) {
+                    break;
                 }
 
-                break;
-            case 'screenshots':
-                if (!images.screenshots) {
-                    missing.push({ ...entry, fix: `npx @rafflex/dev capture ${name}` });
-                }
+                missing.push(unknownImages
+                    ? { ...entry, message: `${requirement.message} ${refreshListingImagesMessage(name)}`, fix: `npx @rafflex/dev synced ${name} "<sync_url>"` }
+                    : { ...entry, fix: `npx @rafflex/dev capture ${name}` });
 
                 break;
             case 'changelog':
@@ -119,6 +121,6 @@ export function submissionLines(submission, indent = '  ') {
 
     return [
         `${indent}Before review (a draft can be pushed without these):`,
-        ...submission.missing.map((entry) => `${indent}  - ${entry.message}${entry.fix === undefined ? '' : ` Run ${entry.fix} to make listing images from the preview.`}`),
+        ...submission.missing.map((entry) => `${indent}  - ${entry.message}${entry.fix === undefined || !entry.fix.includes(' capture ') ? '' : ` Run ${entry.fix} to make listing images from the preview.`}`),
     ];
 }

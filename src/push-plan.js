@@ -1,5 +1,5 @@
 import { defaultTagFor, filenameStem } from './assets.js';
-import { planListingImages, recordedListingImages } from './listing-images.js';
+import { listingImagesUnknown, planListingImages, recordedListingImages } from './listing-images.js';
 
 /**
  * The parts of a push plan added by PRD 45: listing images to upload, and
@@ -83,6 +83,10 @@ export function lockedAssetRefusals(changes, remote, rules) {
  * @param {import('./workspace.js').ProductRemote|null} remote
  */
 export function planListingImagesFor(local, remote) {
+    if (listingImagesUnknown(remote)) {
+        return { cover: null, screenshots: [], removed_screenshots: [], remote_unknown: /** @type {true} */ (true) };
+    }
+
     return planListingImages(local.listing_images, recordedListingImages(remote));
 }
 
@@ -101,6 +105,10 @@ export function planListingImageLines(plan) {
     ];
     /** @type {string[]} */
     const notes = [];
+
+    if (images.remote_unknown === true) {
+        notes.push('  Listing images are not planned: the recorded state does not say which the marketplace has. Refresh it with request_sync and npx @rafflex/dev synced first.');
+    }
 
     if (images.removed_screenshots.length > 0) {
         notes.push(`  ${images.removed_screenshots.length} ${images.removed_screenshots.length === 1 ? 'screenshot is' : 'screenshots are'} on the marketplace but not in listing/screenshots/. Tell the creator to remove ${images.removed_screenshots.length === 1 ? 'it' : 'them'} in the browser.`);

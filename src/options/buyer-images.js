@@ -145,7 +145,7 @@ export function buyerImages(template, assets, assetsDirectory, assetsUrl) {
             url: asset.url,
             width: original?.width ?? 0,
             height: original?.height ?? 0,
-            placeholder_url: `${assetsUrl}${buyerImagePath}${encodeURIComponent(tag)}.png?w=${shape.width}&h=${shape.height}`,
+            placeholder_url: `${assetsUrl}${buyerImagePath}${encodeURIComponent(tag)}-${shape.width}x${shape.height}.png`,
         });
     }
 

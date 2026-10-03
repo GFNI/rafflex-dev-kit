@@ -159,6 +159,25 @@ describe('options.json', () => {
         assert.match(dropped[3], /category filter/);
     });
 
+    test('a top level list warns, as the marketplace stores nothing from it, and refuses only entries that are not objects', () => {
+        const listed = overrideProblems([{ label: 'Heading' }], fields, rules);
+        const mixed = overrideProblems([{ label: 'Heading' }, 'text'], fields, rules);
+
+        assert.deepEqual(listed.map((problem) => problem.refused), [false]);
+        assert.match(listed[0].message, /^options\.json is a list, but the marketplace reads it as an object keyed by option name/);
+        assert.deepEqual(mixed.filter((problem) => problem.refused).map((problem) => problem.message), ['options.json "1" must be an object with label, help, or choices.']);
+    });
+
+    test('refuses choices over the joined length the marketplace takes, on any entry', () => {
+        const long = Array.from({ length: 40 }, () => 'x'.repeat(60));
+        const problems = overrideProblems({ heading: { choices: long }, missing: { choices: long } }, fields, rules);
+        const refused = problems.filter((problem) => problem.refused).map((problem) => problem.message);
+
+        assert.ok(refused.includes('options.json "heading" choices add up to 2439 characters (one per line); the marketplace allows 2000.'));
+        assert.ok(refused.includes('options.json "missing" choices add up to 2439 characters (one per line); the marketplace allows 2000.'));
+        assert.deepEqual(overrideProblems({ heading: { choices: Array.from({ length: 20 }, () => 'x'.repeat(60)) } }, fields, rules), []);
+    });
+
     test('override text passes the banned patterns, as the marketplace checks it', () => {
         const problems = overrideProblems({ heading: { help: 'Visit javascript:alert(1)' } }, fields, documents.rules);
 
@@ -191,21 +210,50 @@ describe('option checks', () => {
         const withChoices = fields.map((field) => (field.key === 'heading' ? { ...field, choices: ['A', 'B'] } : field));
         const sets = sampleValueSets(withChoices, { images: [], categories: ['tech'], limits: valueLimits(documents.contexts) });
 
-        assert.equal(sets.length, 2);
-        assert.deepEqual(sets.map((values) => values.heading), ['A', 'B']);
+        assert.equal(sets.length, 3);
+        assert.deepEqual(sets.map((values) => values.heading), ['A', 'B', 'A']);
         assert.equal(sets[0].show_title, false);
         assert.equal(sets[0].is_new, true);
-        assert.equal(sets[0].count, 1000000);
+        assert.deepEqual(sets.map((values) => values.count), [1000, 1000, 0]);
         assert.equal(/** @type {unknown[]} */ (sets[0].slides).length, 20);
+        assert.equal(sampleValueSets(inferOptions('{{ options.heading }}').fields, { images: [], categories: [], limits: valueLimits(documents.contexts) }).length, 1);
     });
 
     test('a render that fails only once a buyer sets an option blocks, once', () => {
-        const template = '<p>{{ 3.14159|number_format(options.decimals|default(2)) }}</p>';
+        const template = '<p>{{ (100 / options.columns|default(4))|round }}%</p>';
         const issues = optionIssues({ template, files: {}, overrides: null, documents, playCount: 5, scenarios });
 
         assert.deepEqual(issues.map((issue) => [issue.code, issue.scenario]), [['option_render_error', 'mixed']]);
-        assert.match(issues[0].message, /^With every option set as a buyer may set it: /);
+        assert.match(issues[0].message, /^With every option set as a buyer may set it \(value set 2 of 2\): Division by zero/);
         assert.equal(optionIssues({ template: '<p>{{ options.heading }}</p>', files: {}, overrides: null, documents, playCount: 5, scenarios }).length, 0);
+    });
+
+    test('text a buyer types where the template expects a time blocks, as the marketplace fails on it too', () => {
+        const issues = optionIssues({ template: "<p>{{ options.draw_date|default('2026-12-24 20:00')|date('j M') }}</p>", files: {}, overrides: null, documents, playCount: 5, scenarios });
+
+        assert.deepEqual(issues.map((issue) => issue.code), ['option_render_error']);
+        assert.match(issues[0].message, /Failed to parse time string \(A much longer value/);
+    });
+
+    test('values that only stretch the preview renderer do not block', () => {
+        for (const template of [
+            '<p>{{ 3.14159|number_format(options.decimals|default(2)) }}</p>',
+            '<p>{{ price|default(9.99)|number_format(options.decimals|default(2)) }}</p>',
+            "<p>{{ \"2026-12-24 20:00\"|date(options.date_format|default('D j M, H:i')) }}</p>",
+        ]) {
+            assert.deepEqual(optionIssues({ template, files: {}, overrides: null, documents, playCount: 5, scenarios }), [], template);
+        }
+    });
+
+    test('a failure the preview cannot match to the marketplace is a warning, not a block', () => {
+        const issues = optionIssues({ template: '<p>{{ 3.5|round(options.rounding) }}</p>', files: {}, overrides: null, documents, playCount: 5, scenarios });
+
+        assert.deepEqual(issues.map((issue) => issue.code), ['option_warning']);
+        assert.match(issues[0].message, /the preview renderer could not render the template \(.+\)\. This may be a limit of the preview rather than of the template; the marketplace's check is the final verdict\.$/);
+    });
+
+    test('a scenario that fails with the default options is left to the render check', () => {
+        assert.deepEqual(optionIssues({ template: '<p>{{ 10 / 0 }}{{ options.heading }}</p>', files: {}, overrides: null, documents, playCount: 5, scenarios }), []);
     });
 
     test('warns when this version stops reading an option the live version reads', () => {
@@ -219,7 +267,7 @@ describe('option checks', () => {
         const server = await startFixtureServer();
 
         try {
-            const root = temporaryWorkspace({ products: [{ folder: 'spin-to-win', template: '<p>{{ options.heading|default("A") }}{{ options.heading|default("B") }}</p><p>{{ 3.14159|number_format(options.decimals|default(2)) }}</p>\n', options: { heading: { label: 'x'.repeat(61) }, gone: { label: 'Gone' } } }] });
+            const root = temporaryWorkspace({ products: [{ folder: 'spin-to-win', template: '<p>{{ options.heading|default("A") }}{{ options.heading|default("B") }}</p><p>{{ (100 / options.columns|default(4))|round }}%</p>\n', options: { heading: { label: 'x'.repeat(61) }, gone: { label: 'Gone' } } }] });
             const { code, output } = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: server.baseUrl });
             const codes = output.issues.map((/** @type {any} */ issue) => issue.code);
 
@@ -335,7 +383,7 @@ describe('the preview with options', () => {
             products: [
                 {
                     folder: 'spin-to-win',
-                    template: '<h2>{{ options.heading|default("Spin") }}</h2><p>{{ options.size|default("Medium") }}</p><p>{{ options.show_title ? "shown" : "hidden" }}</p><img src="{{ files[\'wheel\'] }}" alt=""><img src="{{ files[\'logo\'] }}" alt="">\n',
+                    template: '<h2>{{ options.heading|default("Spin") }}</h2><p>{{ options.size|default("Medium") }}</p><p>{{ options.show_title ? "shown" : "hidden" }}</p><img src="{{ files[\'wheel\'] }}" alt=""><img src="{{ files[\'logo\'] }}" alt=""><style>.hero { background-image: url({{ files[\'wheel\'] }}); }</style>\n',
                     options: { heading: { label: 'Title', help: 'Above the wheel' }, size: { choices: ['Small', 'Large'] } },
                     assets: { 'wheel.png': pngOf(400, 400), 'logo.png': pngOf(900, 200), 'unused.png': pngOf(10, 10) },
                 },
@@ -390,8 +438,9 @@ describe('the preview with options', () => {
         const sources = [...frame.matchAll(/<img src="([^"]+)"/g)].map((match) => match[1].replace(/&amp;/g, '&'));
         const csp = String(response.headers['content-security-policy']);
 
-        assert.deepEqual(sources, ['/p/games/spin-to-win/assets/.rafflex/buyer-image/wheel.png?w=960&h=320', '/p/games/spin-to-win/assets/.rafflex/buyer-image/logo.png?w=480&h=720']);
+        assert.deepEqual(sources, ['/p/games/spin-to-win/assets/.rafflex/buyer-image/wheel-960x320.png', '/p/games/spin-to-win/assets/.rafflex/buyer-image/logo-480x720.png']);
         assert.ok(csp.includes(`${gameUrl}assets/`), csp);
+        assert.ok(frame.includes('<style>.hero { background-image: url(/p/games/spin-to-win/assets/.rafflex/buyer-image/wheel-960x320.png); }</style>'), frame);
 
         const placeholder = await get(`${server.url}${sources[1].slice(1)}`);
 

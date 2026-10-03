@@ -4,7 +4,7 @@ import { extname, join } from 'node:path';
 import { scanAssets } from './assets.js';
 import { canonicalListing, parseListing, resolveListingCategories, sortedJson } from './listing.js';
 import { readListingImages, remoteListingImagesFrom } from './listing-images.js';
-import { normaliseOverrideText } from './options/overrides.js';
+import { normaliseOverrideText, storedOverrides } from './options/overrides.js';
 import { readTemplate } from './workspace.js';
 
 /**
@@ -14,7 +14,13 @@ import { readTemplate } from './workspace.js';
  * hash the same way:
  *
  * - template: sha256 of the template text
- * - options: sha256 of sorted key JSON of the option overrides
+ * - options: sha256 of sorted key JSON of the option overrides as the
+ *   platform stores them, filtered against the template they sit beside
+ *   (keys it does not read, choices on a field that cannot take them,
+ *   child keys such as slides.title, and categories dropped): options.json
+ *   against the local template, the draft's overrides against the draft's
+ *   template. The live version's overrides, recorded without their
+ *   template, are taken as the platform stored them
  * - listing: sha256 of the canonical listing (see listing.js)
  * - assets: sha256 of each file, compared with remote.media by tag, except
  *   approved libraries, which match by hash and then library name (a
@@ -76,10 +82,23 @@ export function templateHash(template) {
 }
 
 /**
+ * The hash of option overrides as the platform stores them. With the
+ * template they will be stored beside, entries the platform drops are
+ * left out first, so options.json with an entry for a key the template
+ * does not read hashes the same as what the platform sends back after the
+ * push (otherwise every plan would report the options changed, and every
+ * push would resend them). Both sides are filtered with the kit's own
+ * inference, so they agree even where it reads a field differently.
+ * Without a template only the template independent normalisation applies.
+ *
  * @param {unknown} overrides
+ * @param {string|null} [template]
+ * @param {any} [contexts]
  */
-export function optionOverridesHash(overrides) {
-    return sha256(sortedJson(normaliseOverrideText(normaliseOptionOverrides(overrides))));
+export function optionOverridesHash(overrides, template = null, contexts = undefined) {
+    const value = normaliseOptionOverrides(overrides);
+
+    return sha256(sortedJson(template === null ? normaliseOverrideText(value) : storedOverrides(value, template, contexts)));
 }
 
 /**
@@ -144,11 +163,13 @@ export function readLocalState(product, documents = null) {
     try {
         const value = existsSync(product.optionsPath) ? JSON.parse(readFileSync(product.optionsPath, 'utf8')) : {};
 
-        if (value !== null && (typeof value !== 'object' || (Array.isArray(value) && value.length > 0))) {
+        // A list is taken as the platform takes it (an object keyed by
+        // index, whose keys no template reads); check warns about it.
+        if (value !== null && typeof value !== 'object') {
             throw new Error('it must be a JSON object');
         }
 
-        options = { sha256: optionOverridesHash(value), value: normaliseOptionOverrides(value) };
+        options = { sha256: optionOverridesHash(value, template?.text ?? null, documents?.contexts), value: normaliseOptionOverrides(value) };
     } catch (error) {
         options = { error: `options.json cannot be read: ${/** @type {Error} */ (error).message}` };
     }
@@ -403,7 +424,7 @@ export function remoteFromProduct(product, now = new Date()) {
             revision: Number.isInteger(draft.revision) ? draft.revision : null,
             submitted: draft.submitted === true,
             template_sha256: typeof draft.template === 'string' ? templateHash(draft.template) : null,
-            option_overrides_sha256: optionOverridesHash(draft.option_overrides),
+            option_overrides_sha256: optionOverridesHash(draft.option_overrides, typeof draft.template === 'string' ? draft.template : null),
         },
         listing_sha256: listingHash(listingFromProduct(product)),
         latest_review: product.latest_review !== null && typeof product.latest_review === 'object' ? product.latest_review : null,
@@ -416,6 +437,7 @@ export function remoteFromProduct(product, now = new Date()) {
                 kind: String(entry.kind ?? ''),
                 library: typeof entry.library?.name === 'string' ? entry.library.name : (typeof entry.library === 'string' ? entry.library : null),
                 ...(typeof entry.locked === 'boolean' ? { locked: entry.locked } : {}),
+                ...(Number.isInteger(entry.size_bytes) ? { size_bytes: entry.size_bytes } : {}),
             })),
         live: draft !== null || released === null ? null : {
             version: released.version,

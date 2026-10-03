@@ -25,7 +25,7 @@ export const platformWarningCodes = ['option_warning', 'unknown_file_tag', 'game
  * The kit's own quality warnings (PRD 41): the house style, ESLint, the
  * HTML validator, and browser findings that teach rather than block.
  */
-export const kitWarningCodes = ['unformatted', 'script_lint', 'alpine_state', 'markup', 'console_error', 'request_failed'];
+export const kitWarningCodes = ['unformatted', 'script_lint', 'alpine_state', 'markup', 'console_error', 'request_failed', 'asset_content_warning'];
 
 /** Every code that is reported without blocking. */
 export const nonBlockingCodes = [...platformWarningCodes, ...kitWarningCodes];

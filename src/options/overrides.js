@@ -206,8 +206,17 @@ export function storedOverrides(overrides, template, contexts) {
 }
 
 /**
+ * The most characters the platform takes for one option's choices joined
+ * by new lines. Fallback only: rules.json does not publish it yet
+ * (`option_overrides.max_choices_length` is read first when it does). It
+ * is validated before keys and types are filtered, so it applies to every
+ * entry, read by the template or not.
+ */
+export const fallbackMaxChoicesLength = 2000;
+
+/**
  * @typedef {{key: string, message: string, refused: boolean}} OverrideProblem
- * @typedef {{max_label_length?: number, max_help_length?: number, max_choices?: number, violation_message?: string}} OverrideLimits
+ * @typedef {{max_label_length?: number, max_help_length?: number, max_choices?: number, max_choices_length?: number, violation_message?: string}} OverrideLimits
  */
 
 /**
@@ -222,11 +231,13 @@ function characters(value) {
  * whole push is rolled back) or silently drop. Refused: an entry that is
  * not an object, a label or help that is not text or is over the published
  * limit, choices that are not a list of text, too many or too long choices
- * on a text option, and text the banned patterns match. Dropped: keys the
+ * on a text option, choices over the joined length limit (on any entry,
+ * read or not), and text the banned patterns match. Dropped: keys the
  * template does not read, the Categories filter, parts other than label,
- * help, and choices, choices on an option that is not text, and a choice
- * with a comma (split in two). Limits are checked only when rules.json
- * publishes them.
+ * help, and choices, choices on an option that is not text, a choice with
+ * a comma (split in two), and a top level list (stored as nothing). Limits
+ * are checked only when rules.json publishes them, except the joined
+ * choices length, which has a fallback.
  *
  * @param {unknown} overrides
  * @param {import('./infer.js').InferredField[]} fields
@@ -239,6 +250,12 @@ export function overrideProblems(overrides, fields, rules) {
 
     if (overrides === null || overrides === undefined || (Array.isArray(overrides) && overrides.length === 0)) {
         return problems;
+    }
+
+    if (Array.isArray(overrides)) {
+        problems.push({ key: '', message: 'options.json is a list, but the marketplace reads it as an object keyed by option name, such as {"heading": {"label": "Heading"}}, so it stores nothing from a list. Rewrite it as an object.', refused: false });
+
+        return [...problems, ...overrideProblems(Object.fromEntries(overrides.entries()), fields, rules).filter((problem) => problem.refused)];
     }
 
     if (!isObject(overrides)) {
@@ -283,6 +300,12 @@ export function overrideProblems(overrides, fields, rules) {
 
         if (hasChoices && !isTextList(entry.choices)) {
             refuse(key, `options.json "${key}" choices must be a list of text, such as ["Small", "Large"].`);
+        }
+
+        const maxChoicesLength = Number.isInteger(limits.max_choices_length) ? /** @type {number} */ (limits.max_choices_length) : fallbackMaxChoicesLength;
+
+        if (hasChoices && isTextList(entry.choices) && characters(Object.values(entry.choices).join('\n')) > maxChoicesLength) {
+            refuse(key, `options.json "${key}" choices add up to ${characters(Object.values(entry.choices).join('\n'))} characters (one per line); the marketplace allows ${maxChoicesLength}.`);
         }
 
         if (type === undefined) {

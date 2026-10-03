@@ -1,0 +1,6 @@
+<p>{{ '2026-12-24 20:00'|date('D j M, H:i e T P O p') }}</p>
+<p>{{ "2026-12-24 20:00"|date(options.date_format|default('D j M, H:i')) }}</p>
+<p>{% for format in ['d', 'D', 'j', 'l', 'N', 'S', 'w', 'z', 'W', 'F', 'm', 'M', 'n', 't', 'L', 'o', 'X', 'x', 'Y', 'y', 'a', 'A', 'B', 'g', 'G', 'h', 'H', 'i', 's', 'u', 'v', 'e', 'I', 'O', 'P', 'p', 'T', 'Z', 'c', 'r', 'U'] %}{{ format }}={{ '2027-01-03 08:05:01'|date(format) }}|{% endfor %}</p>
+<p>{{ '2026-01-01 20:00'|date('W o X x v u') }} {{ '2026-12-28 20:00:01'|date('W o X x v B') }} {{ '2024-02-29 13:00'|date('L t z S N jS') }}</p>
+<p>{{ 1700000000|date }} {{ '24th December 2026'|date('Y-m-d') }} {{ 'Dec 24 2026 10pm AEST'|date('Y-m-d H:i') }} {{ '24 Dec 2026, 20:00'|date('c') }}</p>
+<p>{{ '2026-12-24 20:00'|date('\\e e') }}</p>

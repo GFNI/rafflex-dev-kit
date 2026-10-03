@@ -1,6 +1,7 @@
 import { captureListingImages } from '../capture.js';
 import { ensureIgnored } from '../git.js';
 import { installCommand, launchChromium, loadPlaywright } from '../playwright.js';
+import { listingImagesUnknown, readListingImages, refreshListingImagesMessage } from '../listing-images.js';
 import { loadDocuments } from '../remote.js';
 import { loadWorkspace, selectProduct, withManifest } from '../workspace.js';
 import { fail, messageOf, writeJson } from './output.js';
@@ -35,8 +36,11 @@ function captureLines(result, name) {
 /**
  * `capture <product> [--force]`: write a cover image and screenshots into
  * the product's listing/ folder from the browser run, when it has none.
- * Without --force a cover or screenshots already there are kept. Without
- * Playwright it says how to install it and exits 0, as `test` does.
+ * Without --force a cover or screenshots already there are kept, and
+ * nothing is captured for a product whose recorded state does not say
+ * which images the marketplace has (it says to refresh it with `synced`).
+ * Without Playwright it says how to install it and exits 0, as `test`
+ * does.
  *
  * JSON: `{product, captured: [{path, width, height, size}], skipped, reason, install}`.
  *
@@ -68,6 +72,13 @@ export async function runCaptureCommand(context) {
 
         return code;
     };
+    const existing = readListingImages(product.directory);
+    const wouldAdd = existing.covers.length === 0 || existing.screenshots.length === 0;
+
+    if (wouldAdd && !options.force && listingImagesUnknown(product.manifest.remote)) {
+        return report({ product: product.path, captured: [], skipped: true, reason: `Nothing was captured. ${refreshListingImagesMessage(name)} Then run capture again, or run npx @rafflex/dev capture ${name} --force to make them anyway.`, install: null }, 0);
+    }
+
     const playwright = await loadPlaywright(workspace.root);
 
     if (playwright === null) {

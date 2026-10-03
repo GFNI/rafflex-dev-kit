@@ -60,7 +60,7 @@ export const legacyLayoutMessage = 'This folder uses the old single project layo
  * @property {ProductRemoteDraft|null} draft
  * @property {string|null} listing_sha256
  * @property {Record<string, any>|null} latest_review
- * @property {{tag: string, filename: string, sha256: string|null, kind: string, library: any, locked?: boolean}[]} media
+ * @property {{tag: string, filename: string, sha256: string|null, kind: string, library: any, locked?: boolean, size_bytes?: number}[]} media
  * @property {import('./listing-images.js').RemoteListingImages} [listing_images]  The cover and screenshots with their SHA-256, when the marketplace reported them.
  *
  * @typedef {{type: string, slug: string|null, title: string, version: string, remote: ProductRemote|null, previous_paths?: string[]}} ProductManifest
@@ -438,7 +438,7 @@ export function selectProduct(workspace, name, cwd) {
 const productKeys = ['type', 'slug', 'title', 'version', 'remote'];
 const remoteKeys = ['synced_at', 'status', 'live_version', 'live_channel', 'draft', 'listing_sha256', 'latest_review', 'media', 'listing_images'];
 const draftKeys = ['version', 'revision', 'submitted', 'template_sha256', 'option_overrides_sha256'];
-const mediaKeys = ['tag', 'filename', 'sha256', 'kind', 'library', 'locked'];
+const mediaKeys = ['tag', 'filename', 'sha256', 'kind', 'library', 'locked', 'size_bytes'];
 
 /**
  * Copy an object with `keys` first, in that order, then any other keys in

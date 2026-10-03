@@ -222,6 +222,39 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.match((await run(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl })).stdout, /Not planned \[asset_locked\] assets\/wheel\.png/);
     });
 
+    test('a changed locked file blocks check, verify, and plan, so nothing reads as ready', async () => {
+        const text = listing(`category_ids: [${firstCategory.id}]`);
+        const root = temporaryWorkspace({
+            products: [{
+                title: 'Spin to Win',
+                slug: 'spin-to-win',
+                version: '1.1.0',
+                template,
+                listing: text,
+                assets: { 'wheel.png': png('new wheel'), 'star.png': png('star') },
+                remote: syncedRemote(text, {
+                    media: [
+                        { tag: 'wheel', filename: 'wheel.png', sha256: sha(png('old wheel')), kind: 'image', library: null, locked: true },
+                        { tag: 'star', filename: 'star.png', sha256: sha(png('star')), kind: 'image', library: null, locked: true },
+                    ],
+                }),
+            }],
+        });
+        const check = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const plan = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const locked = check.output.issues.filter((/** @type {any} */ issue) => issue.code === 'asset_locked');
+
+        assert.equal(check.code, 1);
+        assert.equal(check.output.passed, false);
+        assert.deepEqual(locked.map((/** @type {any} */ issue) => issue.file), ['assets/wheel.png']);
+        assert.match(locked[0].message, /cannot be overwritten\. Upload it under a new name\. Save your change as assets\/wheel-2\.png/);
+        assert.match(locked[0].fix, /new filename/);
+        assert.equal(plan.code, 1);
+        assert.equal(plan.output.ready, false);
+        assert.deepEqual(plan.output.verify.blocking_issues.map((/** @type {any} */ issue) => issue.code), ['asset_locked']);
+        assert.equal(plan.output.refusals[0].code, 'asset_locked');
+    });
+
     test('check blocks a listing the marketplace would refuse', async () => {
         const { limits } = rules.listing;
         const tags = Array.from({ length: limits.max_tags + 1 }, (_, index) => `"tag${index}"`).join(', ');
@@ -234,7 +267,7 @@ describe('the checklist and the new checks through the CLI', () => {
         const directory = join(root, 'games', 'too-long');
 
         addListingImages(directory, {
-            'cover.png': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+            'cover.png': Buffer.from('not an image at all'),
             'cover.jpg': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
             ...Object.fromEntries(Array.from({ length: rules.listing.images.screenshot.max_count + 1 }, (_, index) => [`screenshots/${index}.png`, png(String(index))])),
             'screenshots/big.png': Buffer.concat([png('big'), Buffer.alloc(rules.listing.images.screenshot.max_bytes)]),
@@ -252,7 +285,7 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.ok(listingMessages.some((message) => /video_url "not a link" is not a web address/.test(message)));
         assert.ok(listingMessages.some((message) => message.includes(`the marketplace does not have: 999, Racing. Use category names from this list: ${categories.categories.map((/** @type {any} */ category) => category.name).join(', ')}.`)));
         assert.ok(listingMessages.some((message) => /listing\/ holds 2 cover images \(cover\.jpg, cover\.png\)\. Keep one\./.test(message)));
-        assert.ok(listingMessages.some((message) => /listing\/cover\.png is named as a PNG image but holds a JPEG image/.test(message)));
+        assert.ok(listingMessages.some((message) => /listing\/cover\.png is named as a PNG image but its content is not one the marketplace can identify/.test(message)));
         assert.ok(listingMessages.some((message) => /listing\/screenshots holds 9 screenshots; a product shows at most 6/.test(message)));
         assert.ok(listingMessages.some((message) => /listing\/screenshots\/big\.png is 2 MB; a screenshot can be at most 2 MB/.test(message)));
         assert.ok(listingMessages.some((message) => /listing\/screenshots\/notes\.txt cannot be used as a screenshot/.test(message)));
@@ -263,6 +296,64 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.deepEqual(broken.output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid').map((/** @type {any} */ issue) => [issue.file, issue.message]), [['listing.md', "listing.md's category_ids list is not closed with ]."]]);
     });
 
+    test('a product whose state never recorded its listing images says to refresh it, and plans and captures none', async () => {
+        const text = listing(`category_ids: [${firstCategory.id}]`);
+        const root = temporaryWorkspace({
+            products: [
+                { title: 'Spin to Win', slug: 'spin-to-win', version: '1.1.0', template, listing: text, remote: syncedRemote(text) },
+                { title: 'Known None', slug: 'known-none', version: '1.1.0', template, listing: text, remote: syncedRemote(text, { listing_images: { cover: null, screenshots: [] } }) },
+            ],
+        });
+        const refresh = 'The marketplace may already have a cover and screenshots: this product\'s state was recorded without them (by an older kit). Refresh it first: call request_sync with slug spin-to-win, then run npx @rafflex/dev synced spin-to-win "<sync_url>".';
+        const unknown = selectProduct(loadWorkspace(root), 'spin-to-win', root);
+        const known = selectProduct(loadWorkspace(root), 'known-none', root);
+
+        const images = (/** @type {import('../src/submission.js').MissingRequirement[]} */ missing) => missing.filter((entry) => entry.key === 'cover_image' || entry.key === 'screenshots');
+
+        assert.deepEqual(images(submissionStatus(unknown, { rules, categories }).missing), [
+            { key: 'cover_image', message: `${messages.cover_image} ${refresh}`, fix: 'npx @rafflex/dev synced spin-to-win "<sync_url>"' },
+            { key: 'screenshots', message: `${messages.screenshots} ${refresh}`, fix: 'npx @rafflex/dev synced spin-to-win "<sync_url>"' },
+        ]);
+        assert.deepEqual(images(submissionStatus(known, { rules, categories }).missing).map((entry) => entry.fix), ['npx @rafflex/dev capture known-none', 'npx @rafflex/dev capture known-none']);
+
+        const capture = await runJson(['capture', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+
+        assert.equal(capture.code, 0);
+        assert.equal(capture.output.skipped, true);
+        assert.deepEqual(capture.output.captured, []);
+        assert.match(capture.output.reason, /^Nothing was captured\. The marketplace may already have a cover and screenshots.+capture spin-to-win --force to make them anyway\.$/);
+
+        for (const slug of ['spin-to-win', 'known-none']) {
+            addListingImages(join(root, 'games', slug), { 'cover.png': png('cover'), 'screenshots/01.png': png('one') });
+        }
+
+        const unknownPlan = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const knownPlan = await runJson(['plan', 'known-none'], { cwd: root, baseUrl: marketplace.baseUrl });
+
+        assert.deepEqual(unknownPlan.output.listing_images, { cover: null, screenshots: [], removed_screenshots: [], remote_unknown: true });
+        assert.match((await run(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl })).stdout, /Listing images are not planned: the recorded state does not say which the marketplace has\./);
+        assert.equal(knownPlan.output.listing_images.cover.path, 'listing/cover.png');
+        assert.deepEqual(knownPlan.output.listing_images.screenshots.map((/** @type {any} */ image) => image.path), ['listing/screenshots/01.png']);
+    });
+
+    test('check blocks a cover or screenshot whose file name the upload refuses, with the name to use', async () => {
+        const root = temporaryWorkspace({ products: [{ title: 'Spin to Win', template, listing: listing(`category_ids: [${firstCategory.id}]`) }] });
+
+        addListingImages(join(root, 'games', 'spin-to-win'), {
+            'cover.png': png('cover'),
+            'screenshots/Screen Shot 2026-10-03 at 10.00.00.png': png('one'),
+            'screenshots/02-win.png': png('two'),
+        });
+
+        const { code, output } = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+
+        assert.equal(code, 1);
+        assert.deepEqual(output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid').map((/** @type {any} */ issue) => [issue.file, issue.message]), [[
+            'listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png',
+            'listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png cannot be uploaded under this name. Use letters, numbers, dots, hyphens, and underscores only in file names. Rename it to listing/screenshots/Screen-Shot-2026-10-03-at-10.00.00.png.',
+        ]]);
+    });
+
     test('check blocks names the upload refuses, duplicates, a full library, and content that is not what its name says', async () => {
         const root = temporaryWorkspace({
             products: [{
@@ -271,7 +362,10 @@ describe('the checklist and the new checks through the CLI', () => {
                 listing: listing(`category_ids: [${firstCategory.id}]`),
                 assets: {
                     'Win Jingle.mp3': Buffer.from('ID3\x04rest', 'latin1'),
-                    'wheel.png': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+                    'wheel.png': Buffer.from('not an image at all'),
+                    'hero.png': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+                    'fanfare.png': Buffer.from([0xff, 0xfb, 0x90, 0x44]),
+                    'aac.mp3': Buffer.from([0xff, 0xf1, 0x50, 0x40]),
                     'Prize.png': png('a'),
                     'prize.jpg': Buffer.from([0xff, 0xd8, 0xff, 0xe1]),
                     'one/star.png': png('one'),
@@ -293,11 +387,34 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.deepEqual(byCode('asset_filename'), ['assets/Win Jingle.mp3 cannot be uploaded under this name. Use letters, numbers, dots, hyphens, and underscores only in file names. Rename it to assets/Win-Jingle.mp3 (its tag stays win-jingle).']);
         assert.deepEqual(byCode('asset_duplicate'), [
             'assets/one/star.png and assets/two/star.png upload under the same name, so one would replace the other. Rename one, for example to star-2.png.',
-            "assets/Prize.png and assets/prize.jpg would all take the tag prize. Rename all but one, because files['prize'] can only mean one file.",
         ]);
         assert.deepEqual(byCode('asset_capacity'), ['This media library is full (maximum 25 MB). The files in assets/ add up to 28 MB, over the 25 MB a product\'s media library holds.']);
-        assert.deepEqual(byCode('asset_content_mismatch'), ['assets/wheel.png is named as a PNG image but holds a JPEG image. Rename it to wheel.jpg, or export it again as a PNG image.']);
+        assert.deepEqual(byCode('asset_content_mismatch'), [
+            'assets/aac.mp3 is named as MP3 audio but holds AAC audio, which the marketplace does not accept here. Export it again as MP3 audio.',
+            'assets/wheel.png is named as a PNG image but its content is not one the marketplace can identify. Export it again as a PNG image.',
+        ]);
+        assert.deepEqual(byCode('asset_content_warning'), [
+            "assets/fanfare.png is named as a PNG image but holds MP3 audio. The marketplace stores it as what it is, so files['fanfare'] is a sound, not an image. Rename it to fanfare.mp3 if that is intended.",
+        ]);
         assert.ok(output.issues.filter((/** @type {any} */ issue) => issue.code.startsWith('asset_')).every((/** @type {any} */ issue) => issue.fix !== '' && typeof issue.file === 'string'));
+    });
+
+    test('the capacity counts files still on the marketplace that assets/ no longer holds', async () => {
+        const text = listing(`category_ids: [${firstCategory.id}]`);
+        const big = Buffer.concat([png('big'), Buffer.alloc(4 * 1024 * 1024)]);
+        const assets = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((name) => [`${name}.png`, Buffer.concat([png(name), Buffer.alloc(4 * 1024 * 1024)])]));
+        const media = Object.entries(assets).map(([filename, contents]) => ({ tag: filename.slice(0, 1), filename, sha256: sha(contents), kind: 'image', library: null, size_bytes: contents.length }));
+        const product = (/** @type {string} */ title, /** @type {any[]} */ gone) => ({ title, slug: title.toLowerCase(), version: '1.1.0', template, listing: text, assets: { ...assets, 'f.png': big }, remote: syncedRemote(text, { media: [...media, ...gone] }) });
+        const root = temporaryWorkspace({
+            products: [
+                product('Sized', [{ tag: 'old', filename: 'old.png', sha256: 'x', kind: 'image', library: null, size_bytes: 3 * 1024 * 1024 }, { tag: 'three', filename: 'three.js', sha256: 'y', kind: 'library', library: 'three.js', size_bytes: 9 * 1024 * 1024 }]),
+                product('Unsized', [{ tag: 'old', filename: 'old.png', sha256: 'x', kind: 'image', library: null }]),
+            ],
+        });
+        const capacity = async (/** @type {string} */ slug) => (await runJson(['check', slug], { cwd: root, baseUrl: marketplace.baseUrl })).output.issues.filter((/** @type {any} */ issue) => issue.code === 'asset_capacity').map((/** @type {any} */ issue) => issue.message);
+
+        assert.deepEqual(await capacity('sized'), ['This media library is full (maximum 25 MB). The files in assets/ add up to 27 MB (3 MB of it in files still on the marketplace but no longer in assets/; remove them in the browser to free the space), over the 25 MB a product\'s media library holds.']);
+        assert.deepEqual(await capacity('unsized'), []);
     });
 
     test('files already on the marketplace are not judged by their names or content again', async () => {

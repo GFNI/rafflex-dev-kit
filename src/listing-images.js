@@ -187,10 +187,35 @@ export function recordedListingImages(remote) {
 }
 
 /**
+ * Whether the marketplace's listing images are unknown: the product has a
+ * recorded marketplace state, but that state holds no record of listing
+ * images at all (it was last synced by kit 0.3.0, or from a marketplace
+ * that did not report them). A record saying there are none is known.
+ * A product never synced has no state, so its images are known to be
+ * only what listing/ holds.
+ *
+ * @param {import('./workspace.js').ProductRemote|null|undefined} remote
+ */
+export function listingImagesUnknown(remote) {
+    return remote !== null && remote !== undefined && typeof remote === 'object' && !Object.hasOwn(remote, 'listing_images');
+}
+
+/**
+ * What to tell the creator's AI when the listing images are unknown: read
+ * the product again so the kit knows what the marketplace holds.
+ *
+ * @param {string} name The product's slug or folder.
+ */
+export function refreshListingImagesMessage(name) {
+    return `The marketplace may already have a cover and screenshots: this product's state was recorded without them (by an older kit). Refresh it first: call request_sync with slug ${name}, then run npx @rafflex/dev synced ${name} "<sync_url>".`;
+}
+
+/**
  * @typedef {object} ListingImagesPlan
  * @property {{path: string, sha256: string, size: number, mime_type: string, change: 'new'|'changed'}|null} cover
  * @property {{path: string, sha256: string, size: number, mime_type: string, change: 'new'}[]} screenshots
  * @property {string[]} removed_screenshots
+ * @property {true} [remote_unknown] Present when nothing is planned because the marketplace's images are unknown.
  */
 
 /**

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { contentMismatch, imageDimensions, mismatchMessage, sniffContent } from '../src/file-content.js';
+import { contentMismatch, contentTypesFor, contentVerdict, imageDimensions, mismatchMessage, sniffContent } from '../src/file-content.js';
 import { listingImagesPresent, planListingImages, readListingImages, recordedListingImages, remoteListingImagesFrom } from '../src/listing-images.js';
 import { resolveListingCategories } from '../src/listing.js';
 import { remoteFromProduct } from '../src/sync-state.js';
@@ -67,6 +67,44 @@ describe('file content', () => {
         assert.deepEqual(contentMismatch('wheel.png', jpeg), { expected: 'png', found: 'jpeg' });
         assert.equal(mismatchMessage('assets/wheel.png', { expected: 'png', found: 'jpeg' }), 'assets/wheel.png is named as a PNG image but holds a JPEG image. Rename it to wheel.jpg, or export it again as a PNG image.');
         assert.match(mismatchMessage('assets/jingle.mp3', { expected: 'mp3', found: null }), /is named as a MP3 audio but its content is not one/);
+    });
+
+    test('tells MPEG audio from AAC, WAV, and an ID3 tag over either, as the platform does', () => {
+        const id3 = (/** @type {number[]} */ frame) => Buffer.concat([Buffer.from('ID3\x04\x00\x00\x00\x00\x00\x02', 'latin1'), Buffer.from([0, 0]), Buffer.from(frame)]);
+
+        assert.equal(sniffContent(Buffer.from([0xff, 0xfb, 0x50, 0xc4])), 'mp3');
+        assert.equal(sniffContent(Buffer.from([0xff, 0xf3, 0x70, 0xc0])), 'mp3');
+        assert.equal(sniffContent(Buffer.from([0xff, 0xe3, 0x38, 0xc0])), 'mp3');
+        assert.equal(sniffContent(Buffer.from([0xff, 0xfd, 0xe0, 0xc4])), 'mp3');
+        assert.equal(sniffContent(Buffer.from([0xff, 0xf1, 0x50, 0x40])), 'aac');
+        assert.equal(sniffContent(Buffer.from([0xff, 0xf9, 0x60, 0x60])), 'aac');
+        assert.equal(sniffContent(id3([0xff, 0xfb, 0x50, 0xc4])), 'mp3');
+        assert.equal(sniffContent(id3([0xff, 0xf1, 0x50, 0x40])), 'aac');
+        assert.equal(sniffContent(Buffer.from('RIFF\0\0\0\0WAVEfmt ', 'latin1')), 'wav');
+    });
+
+    test('takes any image the platform accepts under an image name, and refuses what it refuses', () => {
+        const library = contentTypesFor(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'glb', 'js']);
+        const cover = contentTypesFor(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'avif', 'heic', 'heif']);
+        const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+        const webp = Buffer.from('RIFF\0\0\0\0WEBPVP8L', 'latin1');
+        const bmp = Buffer.from('BM6\x03\0\0\0\0\0\0\x36\0\0\0', 'latin1');
+        const mp3 = Buffer.from([0xff, 0xfb, 0x50, 0xc4]);
+
+        assert.equal(contentVerdict('hero.png', jpeg, library), null);
+        assert.equal(contentVerdict('hero.png', webp, library), null);
+        assert.equal(contentVerdict('hero.gif', webp, library), null);
+        assert.equal(contentVerdict('cover.png', webp, cover), null);
+        assert.equal(contentVerdict('cover.png', bmp, cover), null);
+        assert.equal(contentVerdict('win.mp3', png(1, 1), library)?.blocking, false);
+        assert.deepEqual(contentVerdict('win.png', mp3, library), { expected: 'png', found: 'mp3', blocking: false });
+        assert.deepEqual(contentVerdict('hero.png', bmp, library), { expected: 'png', found: 'bmp', blocking: true });
+        assert.deepEqual(contentVerdict('win.mp3', Buffer.from([0xff, 0xf1, 0x50, 0x40]), library), { expected: 'mp3', found: 'aac', blocking: true });
+        assert.deepEqual(contentVerdict('cover.png', mp3, cover), { expected: 'png', found: 'mp3', blocking: true });
+        assert.deepEqual(contentVerdict('model.glb', jpeg, library), { expected: 'glb', found: 'jpeg', blocking: true });
+        assert.deepEqual(contentVerdict('hero.png', Buffer.from('glTF', 'latin1'), library), { expected: 'png', found: 'glb', blocking: true });
+        assert.deepEqual(contentVerdict('hero.png', Buffer.from('text'), library), { expected: 'png', found: null, blocking: true });
+        assert.equal(contentVerdict('notes.txt', Buffer.from('text'), library), null);
     });
 
     test('reads the pixel size of a PNG and a JPEG', () => {

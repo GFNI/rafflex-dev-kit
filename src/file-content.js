@@ -5,7 +5,8 @@
  */
 
 /**
- * @typedef {'png'|'jpeg'|'webp'|'gif'|'mp3'|'glb'|'bmp'|'avif'|'heic'} ContentType
+ * @typedef {'png'|'jpeg'|'webp'|'gif'|'mp3'|'glb'|'bmp'|'avif'|'heic'|'aac'|'wav'|'ogg'} ContentType
+ * @typedef {'image'|'audio'|'model'} ContentKind
  */
 
 /** @type {Record<ContentType, string>} */
@@ -19,6 +20,25 @@ export const contentLabels = {
     bmp: 'BMP image',
     avif: 'AVIF image',
     heic: 'HEIC image',
+    aac: 'AAC audio',
+    wav: 'WAV audio',
+    ogg: 'Ogg audio',
+};
+
+/** @type {Record<ContentType, ContentKind>} */
+export const contentKinds = {
+    png: 'image',
+    jpeg: 'image',
+    webp: 'image',
+    gif: 'image',
+    bmp: 'image',
+    avif: 'image',
+    heic: 'image',
+    mp3: 'audio',
+    aac: 'audio',
+    wav: 'audio',
+    ogg: 'audio',
+    glb: 'model',
 };
 
 /**
@@ -43,7 +63,7 @@ export const contentByExtension = {
 
 /** The usual extension for each content type, for "rename it to" advice. */
 /** @type {Record<ContentType, string>} */
-export const extensionFor = { png: 'png', jpeg: 'jpg', webp: 'webp', gif: 'gif', mp3: 'mp3', glb: 'glb', bmp: 'bmp', avif: 'avif', heic: 'heic' };
+export const extensionFor = { png: 'png', jpeg: 'jpg', webp: 'webp', gif: 'gif', mp3: 'mp3', glb: 'glb', bmp: 'bmp', avif: 'avif', heic: 'heic', aac: 'aac', wav: 'wav', ogg: 'ogg' };
 
 /**
  * @param {Buffer} contents
@@ -55,13 +75,61 @@ function startsWithAt(contents, offset, text) {
 }
 
 /**
+ * The audio an MPEG style frame header at `offset` starts: ADTS (AAC) has
+ * the layer bits 00, which MPEG audio reserves, so it is told apart from
+ * MP3 (and MPEG layer I and II, which the platform also takes as MPEG
+ * audio). Reserved version bits mean it is no frame at all.
+ *
+ * @param {Buffer} contents
+ * @param {number} offset
+ * @returns {'mp3'|'aac'|null}
+ */
+function frameAudioAt(contents, offset) {
+    if (contents.length < offset + 2 || contents[offset] !== 0xff || (contents[offset + 1] & 0xe0) !== 0xe0) {
+        return null;
+    }
+
+    const second = contents[offset + 1];
+
+    if ((second & 0xf6) === 0xf0) {
+        return 'aac';
+    }
+
+    const version = (second >> 3) & 0x03;
+    const layer = (second >> 1) & 0x03;
+
+    return version === 1 || layer === 0 ? null : 'mp3';
+}
+
+/**
  * The content type a file's bytes show, or null when they are none the
  * platform takes.
+ *
+ * An ID3 tag is skipped and the audio after it judged, as the platform
+ * does (AAC behind an ID3 tag is still AAC). When what follows the tag is
+ * not recognised the file counts as MP3, so the kit never refuses a file
+ * the platform might take.
  *
  * @param {Buffer} contents
  * @returns {ContentType|null}
  */
 export function sniffContent(contents) {
+    if (startsWithAt(contents, 0, 'ID3')) {
+        const tagEnd = contents.length >= 10
+            ? 10 + ((contents[6] & 0x7f) << 21 | (contents[7] & 0x7f) << 14 | (contents[8] & 0x7f) << 7 | (contents[9] & 0x7f)) + ((contents[5] & 0x10) === 0 ? 0 : 10)
+            : contents.length;
+
+        return frameAudioAt(contents, tagEnd) ?? 'mp3';
+    }
+
+    if (startsWithAt(contents, 0, 'RIFF') && startsWithAt(contents, 8, 'WAVE')) {
+        return 'wav';
+    }
+
+    if (startsWithAt(contents, 0, 'OggS')) {
+        return 'ogg';
+    }
+
     if (contents.length >= 8 && contents.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
         return 'png';
     }
@@ -98,11 +166,7 @@ export function sniffContent(contents) {
         }
     }
 
-    if (startsWithAt(contents, 0, 'ID3') || (contents.length >= 2 && contents[0] === 0xff && (contents[1] & 0xe0) === 0xe0)) {
-        return 'mp3';
-    }
-
-    return null;
+    return frameAudioAt(contents, 0);
 }
 
 /**
@@ -141,6 +205,104 @@ export function mismatchMessage(path, mismatch) {
     }
 
     return `${path} is named as a ${contentLabels[mismatch.expected]} but holds a ${contentLabels[mismatch.found]}. Rename it to ${stem}.${extensionFor[mismatch.found]}, or export it again as a ${contentLabels[mismatch.expected]}.`;
+}
+
+/**
+ * The content types a list of accepted extensions stands for (the
+ * platform builds its accepted MIME types from the extensions the same
+ * way), so `["png", "jpg", "mp3"]` accepts PNG, JPEG, and MP3 content.
+ *
+ * @param {string[]} extensions
+ * @returns {ContentType[]}
+ */
+export function contentTypesFor(extensions) {
+    const lower = extensions.map((extension) => String(extension).toLowerCase());
+
+    return [...new Set(lower.map((extension) => contentByExtension[extension]).filter((type) => type !== undefined))];
+}
+
+/**
+ * @typedef {object} ContentVerdict
+ * @property {ContentType} expected What the extension promises.
+ * @property {ContentType|null} found What the bytes are, or null when the kit cannot tell.
+ * @property {boolean} blocking True when the platform refuses the content.
+ */
+
+/**
+ * How a file's content stands against its extension, judged as the
+ * platform judges an upload: an image or audio extension takes any image
+ * or audio content it accepts (a JPEG named hero.png is stored as the
+ * JPEG it is), a .glb takes only a binary glTF model. Returns null when
+ * the content is what the name says, or another type of the same kind
+ * (browsers show any image whatever its extension).
+ *
+ * - `blocking: true` when the content is none the platform accepts for
+ *   that extension (text named .png, AAC or WAV named .mp3).
+ * - `blocking: false` when it is accepted but of another kind (audio
+ *   named .png): the platform stores it as audio, so the template gets a
+ *   sound where its name promises an image.
+ *
+ * @param {string} filename
+ * @param {Buffer} contents
+ * @param {ContentType[]} accepted The content types the destination takes.
+ * @returns {ContentVerdict|null}
+ */
+export function contentVerdict(filename, contents, accepted) {
+    const extension = filename.includes('.') ? filename.slice(filename.lastIndexOf('.') + 1).toLowerCase() : '';
+    const expected = contentByExtension[extension];
+
+    if (expected === undefined) {
+        return null;
+    }
+
+    const found = sniffContent(contents);
+
+    if (found === expected) {
+        return null;
+    }
+
+    const takes = contentKinds[expected] === 'model'
+        ? accepted.filter((type) => type === expected)
+        : accepted.filter((type) => contentKinds[type] !== 'model');
+
+    if (found === null || !takes.includes(found)) {
+        return { expected, found, blocking: true };
+    }
+
+    return contentKinds[found] === contentKinds[expected] ? null : { expected, found, blocking: false };
+}
+
+/**
+ * @param {ContentType} type
+ */
+function withArticle(type) {
+    return contentKinds[type] === 'audio' ? contentLabels[type] : `a ${contentLabels[type]}`;
+}
+
+/**
+ * A plain sentence for a content verdict, naming the file and what to do.
+ *
+ * @param {string} path      The file as the creator sees it ("assets/wheel.png").
+ * @param {ContentVerdict} verdict
+ * @param {string} [tag]     The tag a media library file takes, for the warning.
+ */
+export function contentVerdictMessage(path, verdict, tag) {
+    const name = path.split('/').pop() ?? path;
+    const stem = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
+    const named = `${path} is named as ${withArticle(verdict.expected)}`;
+
+    if (verdict.found === null) {
+        return `${named} but its content is not one the marketplace can identify. Export it again as ${withArticle(verdict.expected)}.`;
+    }
+
+    if (verdict.blocking) {
+        return `${named} but holds ${withArticle(verdict.found)}, which the marketplace does not accept here. Export it again as ${withArticle(verdict.expected)}.`;
+    }
+
+    const kind = contentKinds[verdict.found] === 'audio' ? 'a sound' : `an ${contentKinds[verdict.found]}`;
+    const reference = tag === undefined ? 'the file' : `files['${tag}']`;
+
+    return `${named} but holds ${withArticle(verdict.found)}. The marketplace stores it as what it is, so ${reference} is ${kind}, not ${contentKinds[verdict.expected] === 'audio' ? 'a sound' : `an ${contentKinds[verdict.expected]}`}. Rename it to ${stem}.${extensionFor[verdict.found]} if that is intended.`;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { formatPlatformDate, unparseableDateMessage } from './platform-date.js';
 import { platformJsonEncode } from './platform-json.js';
 import { lineAt, lintTemplate } from './twig-lint.js';
 
@@ -120,21 +121,82 @@ function platformRound(value, precision) {
 }
 
 /**
+ * A non negative number's exact decimal expansion at `decimals` places, as
+ * the platform prints a float with that many: every digit of the binary
+ * value, rounded half to even at the last place, then zeros. toFixed
+ * stops at 100 places and turns to exponents from 1e21; this does neither.
+ *
+ * @param {number} value
+ * @param {number} decimals
+ */
+export function exactFixed(value, decimals) {
+    if (decimals <= 100 && value < 1e21) {
+        return value.toFixed(decimals);
+    }
+
+    const view = new DataView(new ArrayBuffer(8));
+
+    view.setFloat64(0, value);
+
+    const high = view.getUint32(0);
+    const biasedExponent = (high >>> 20) & 0x7ff;
+    let mantissa = (BigInt(high & 0xfffff) << 32n) | BigInt(view.getUint32(4));
+
+    if (biasedExponent !== 0) {
+        mantissa |= 1n << 52n;
+    }
+
+    const exponent = (biasedExponent === 0 ? 1 : biasedExponent) - 1075;
+
+    if (exponent >= 0) {
+        const whole = (mantissa << BigInt(exponent)).toString();
+
+        return decimals === 0 ? whole : `${whole}.${'0'.repeat(decimals)}`;
+    }
+
+    const places = -exponent;
+    let digits = (mantissa * 5n ** BigInt(places)).toString().padStart(places + 1, '0');
+    let fractionLength = places;
+
+    if (places > decimals) {
+        const scaled = BigInt(digits.slice(0, digits.length - (places - decimals)) || '0');
+        const remainder = digits.slice(digits.length - (places - decimals));
+        const half = `5${'0'.repeat(remainder.length - 1)}`;
+        const roundUp = remainder > half || (remainder === half && scaled % 2n === 1n);
+
+        digits = (scaled + (roundUp ? 1n : 0n)).toString().padStart(decimals + 1, '0');
+        fractionLength = decimals;
+    }
+
+    const whole = digits.slice(0, digits.length - fractionLength);
+    const fraction = digits.slice(digits.length - fractionLength).padEnd(decimals, '0');
+
+    return decimals === 0 ? whole : `${whole}.${fraction}`;
+}
+
+/**
  * Twig's number_format with the platform's rounding and defaults (0 decimals, '.'
- * and ',').
+ * and ','). Negative decimals round to tens, hundreds, and so on. Past
+ * the places a float holds there is nothing to round, so the exact
+ * binary value is printed, as the platform prints it (3.14159 at 20
+ * places is 3.14158999999999988262).
  *
  * @param {unknown} value
  * @param {unknown[]} [params]
  */
 function numberFormat(value, params = []) {
-    const decimals = params[0] === undefined || params[0] === null ? 0 : Math.max(0, Math.trunc(Number(params[0])));
+    const requested = params[0] === undefined || params[0] === null ? 0 : Math.trunc(Number(params[0]));
+    const decimals = Number.isFinite(requested) ? Math.max(0, requested) : 0;
     const decimalPoint = params[1] === undefined || params[1] === null ? '.' : String(params[1]);
     const thousandsSeparator = params[2] === undefined || params[2] === null ? ',' : String(params[2]);
     const number = Number(value ?? 0);
-    const rounded = platformRound(Number.isFinite(number) ? number : 0, decimals);
-    const [whole, fraction] = Math.abs(rounded).toFixed(decimals).split('.');
+    const finite = Number.isFinite(number) ? number : 0;
+    const roundTo = Number.isFinite(requested) ? requested : 0;
+    const integralAlready = finite === 0 || Math.abs(finite) * 10 ** roundTo >= 2 ** 52;
+    const rounded = integralAlready ? finite : platformRound(finite, roundTo);
+    const [whole, fraction] = exactFixed(Math.abs(rounded), decimals).split('.');
     const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, thousandsSeparator);
-    const sign = rounded < 0 && Number(`${whole}.${fraction ?? 0}`) !== 0 ? '-' : '';
+    const sign = rounded < 0 && /[1-9]/.test(`${whole}${fraction ?? ''}`) ? '-' : '';
 
     return `${sign}${grouped}${fraction === undefined ? '' : `${decimalPoint}${fraction}`}`;
 }
@@ -314,6 +376,180 @@ function platformSlice(value, params) {
     return originalSlice(value, params);
 }
 
+const originalLength = Twig.filters.length;
+const originalJoin = Twig.filters.join;
+const originalRound = Twig.filters.round;
+
+/**
+ * A scalar as the platform turns it into text: true as 1, false and null
+ * as nothing, numbers at the platform's precision.
+ *
+ * @param {unknown} value
+ */
+function scalarText(value) {
+    if (value === true) {
+        return '1';
+    }
+
+    if (value === false || value === null || value === undefined) {
+        return '';
+    }
+
+    return typeof value === 'number' ? platformNumberToString(value) : String(value);
+}
+
+/**
+ * Twig's length: a number or a boolean counts the characters it prints
+ * as (12.5 is 4), where twig.js counts nothing.
+ *
+ * @param {unknown} value
+ */
+function platformLength(value) {
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return [...scalarText(value)].length;
+    }
+
+    return originalLength(value);
+}
+
+/**
+ * Twig's join: a scalar joins to itself as text (true is 1, 1.5 is 1.5,
+ * "abc" is abc), where twig.js prints nothing or splits the text.
+ *
+ * @param {unknown} value
+ * @param {unknown[]} [params]
+ */
+function platformJoin(value, params) {
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string' || value instanceof String) {
+        return scalarText(value);
+    }
+
+    return originalJoin(value, params);
+}
+
+/**
+ * A value as the platform reads it for a number: null and false are 0,
+ * true is 1, text is its leading number (0 when it has none).
+ *
+ * @param {unknown} value
+ */
+function looseNumber(value) {
+    if (value === null || value === undefined || value === false) {
+        return 0;
+    }
+
+    if (value === true) {
+        return 1;
+    }
+
+    const number = typeof value === 'number' ? value : parseFloat(String(value));
+
+    return Number.isNaN(number) ? 0 : number;
+}
+
+/**
+ * Twig's round, reading null, booleans, and text as the platform does
+ * (null|round is 0), where twig.js prints NAN.
+ *
+ * @param {unknown} value
+ * @param {unknown[]} [params]
+ */
+function platformRoundFilter(value, params) {
+    return originalRound(looseNumber(value), params);
+}
+
+/** @type {((text: string) => number|false)|null} */
+let parseTime = null;
+
+/**
+ * Twig's date filter as the platform prints it: every format character
+ * in UTC (e prints UTC), and text it cannot read as a time is a render
+ * error, as it is there ("23 hours from now" reads as 1970 in twig.js).
+ *
+ * @param {unknown} value
+ * @param {unknown[]} [params]
+ */
+function platformDate(value, params = []) {
+    const format = params[0] === undefined || params[0] === null ? 'F j, Y H:i' : String(params[0]);
+    /** @type {Date} */
+    let date;
+
+    if (value === undefined || value === null || value === '') {
+        date = new Date();
+    } else if (value instanceof Date) {
+        date = value;
+    } else if (typeof value === 'number' || /^\d+$/.test(String(value))) {
+        date = new Date(Number(value) * 1000);
+    } else {
+        const text = String(value);
+        const seconds = parseTime === null ? false : parseTime(text);
+
+        if (seconds === false || !Number.isFinite(seconds)) {
+            const refusal = unparseableDateMessage(text);
+
+            if (refusal !== null) {
+                throw new Error(refusal);
+            }
+        }
+
+        date = new Date((seconds === false || !Number.isFinite(seconds) ? 0 : seconds) * 1000);
+    }
+
+    return formatPlatformDate(format, date);
+}
+
+/** The operators the platform does arithmetic with. */
+const arithmeticOperators = ['+', '-', '*', '/', '//', '%', '**'];
+
+/**
+ * The type name the platform's refusal message gives an operand.
+ *
+ * @param {unknown} value
+ */
+function operandType(value) {
+    if (value === null || value === undefined) {
+        return 'null';
+    }
+
+    if (typeof value === 'boolean') {
+        return 'bool';
+    }
+
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? 'int' : 'float';
+    }
+
+    return 'string';
+}
+
+/**
+ * An arithmetic operand as the platform reads it: null and false are 0,
+ * true is 1, text its leading number. Text with no leading number is
+ * refused, as the platform refuses it ("Unsupported operand types:
+ * string + int"). Anything else (a list, a mapping) is left to twig.js.
+ *
+ * @param {unknown} value
+ * @returns {{number: number}|{refused: true}|null}
+ */
+function arithmeticOperand(value) {
+    if (value === null || value === undefined || typeof value === 'boolean') {
+        return { number: looseNumber(value) };
+    }
+
+    if (typeof value === 'number') {
+        return { number: value };
+    }
+
+    if (typeof value === 'string' || value instanceof String) {
+        const text = String(value);
+        const number = /^\s*[+-]?(?:\d|\.\d)/.test(text) ? parseFloat(text) : Number.NaN;
+
+        return Number.isNaN(number) ? { refused: true } : { number };
+    }
+
+    return null;
+}
+
 Twig.extendFilter('json', (value) => {
     const encoded = platformJsonEncode(value);
 
@@ -325,6 +561,10 @@ Twig.extendFilter('trim', platformTrim);
 Twig.extendFilter('first', endOf('first'));
 Twig.extendFilter('last', endOf('last'));
 Twig.extendFilter('slice', platformSlice);
+Twig.extendFilter('length', platformLength);
+Twig.extendFilter('join', platformJoin);
+Twig.extendFilter('round', platformRoundFilter);
+Twig.extendFilter('date', platformDate);
 // On the platform an undefined variable or missing key is null.
 Twig.extendTest('null', (value) => value === null || value === undefined);
 Twig.extendTest('none', (value) => value === null || value === undefined);
@@ -439,6 +679,59 @@ Twig.extend((internal) => {
                 stack[stack.length - 1] = undefined;
             }
         });
+    };
+
+    parseTime = (text) => {
+        const seconds = internal.lib.strtotime(text);
+
+        return typeof seconds === 'number' ? seconds : false;
+    };
+
+    // Arithmetic as the platform does it: null and booleans are numbers,
+    // text without a leading number is refused, a division or modulo by
+    // zero is an error (twig.js prints NAN or INF), and modulo works on
+    // whole numbers.
+    const originalOperatorParse = internal.expression.operator.parse;
+
+    internal.expression.operator.parse = function platformOperatorParse(operator, stack) {
+        if (!arithmeticOperators.includes(operator) || stack.length < 2) {
+            return originalOperatorParse.call(this, operator, stack);
+        }
+
+        const right = stack[stack.length - 1];
+        const left = stack[stack.length - 2];
+        const first = arithmeticOperand(left);
+        const second = arithmeticOperand(right);
+
+        if (first === null || second === null) {
+            return originalOperatorParse.call(this, operator, stack);
+        }
+
+        if ('refused' in first || 'refused' in second) {
+            throw new Error(`Unsupported operand types: ${operandType(left)} ${operator} ${operandType(right)}`);
+        }
+
+        if ((operator === '/' || operator === '//') && second.number === 0) {
+            throw new Error('Division by zero');
+        }
+
+        stack.splice(stack.length - 2, 2);
+
+        if (operator === '%') {
+            const divisor = Math.trunc(second.number);
+
+            if (divisor === 0) {
+                throw new Error('Modulo by zero');
+            }
+
+            stack.push(Math.trunc(first.number) % divisor);
+
+            return stack;
+        }
+
+        stack.push(first.number, second.number);
+
+        return originalOperatorParse.call(this, operator, stack);
     };
 
     const originalLogicParse = internal.logic.parse;
