@@ -1,6 +1,6 @@
 {
   "name": "@rafflex/dev",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Build, preview, and check Rafflex marketplace games and blocks locally, with the platform's own rules.",
   "license": "MIT",
   "type": "module",
@@ -14,7 +14,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || ^22.16.0 || >=24.0.0"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
@@ -31,7 +31,7 @@
     "alpinejs": "^3.17.4",
     "eslint": "10.12.0",
     "globals": "17.13.0",
-    "html-validate": "11.16.1",
+    "html-validate": "10.17.0",
     "prettier": "3.9.9",
     "twig": "^2.0.0"
   },
