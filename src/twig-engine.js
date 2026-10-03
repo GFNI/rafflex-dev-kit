@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { phpJsonEncode } from './php-json.js';
+import { platformJsonEncode } from './platform-json.js';
 import { lineAt, lintTemplate } from './twig-lint.js';
 
 export { lineAt };
@@ -106,13 +106,13 @@ function defaultKeepingFalse(value, params) {
 }
 
 /**
- * PHP's round(): half away from zero, after removing the representation
+ * The platform's rounding: half away from zero, after removing the representation
  * error that makes 1.005 * 100 read as 100.49999.
  *
  * @param {number} value
  * @param {number} precision
  */
-function phpRound(value, precision) {
+function platformRound(value, precision) {
     const factor = 10 ** precision;
     const scaled = Number((Math.abs(value) * factor).toPrecision(15));
 
@@ -120,7 +120,7 @@ function phpRound(value, precision) {
 }
 
 /**
- * Twig's number_format with PHP's rounding and defaults (0 decimals, '.'
+ * Twig's number_format with the platform's rounding and defaults (0 decimals, '.'
  * and ',').
  *
  * @param {unknown} value
@@ -131,7 +131,7 @@ function numberFormat(value, params = []) {
     const decimalPoint = params[1] === undefined || params[1] === null ? '.' : String(params[1]);
     const thousandsSeparator = params[2] === undefined || params[2] === null ? ',' : String(params[2]);
     const number = Number(value ?? 0);
-    const rounded = phpRound(Number.isFinite(number) ? number : 0, decimals);
+    const rounded = platformRound(Number.isFinite(number) ? number : 0, decimals);
     const [whole, fraction] = Math.abs(rounded).toFixed(decimals).split('.');
     const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, thousandsSeparator);
     const sign = rounded < 0 && Number(`${whole}.${fraction ?? 0}`) !== 0 ? '-' : '';
@@ -140,12 +140,12 @@ function numberFormat(value, params = []) {
 }
 
 /**
- * A number as PHP prints it with `echo` (precision 14): 0.1 + 0.2 prints
+ * A number as the platform prints it (14 significant digits): 0.1 + 0.2 prints
  * 0.3, and large or tiny floats use the 1.0E+25 form.
  *
  * @param {number} value
  */
-export function phpNumberToString(value) {
+export function platformNumberToString(value) {
     if (Number.isNaN(value)) {
         return 'NAN';
     }
@@ -172,13 +172,13 @@ export function phpNumberToString(value) {
 }
 
 /**
- * A printed value as PHP Twig prints it: true as 1, false and null as
- * nothing, numbers at PHP precision. Printing an array is an error on the
+ * A printed value as the platform prints it: true as 1, false and null as
+ * nothing, numbers at the platform's precision. Printing an array is an error on the
  * platform ("Array to string conversion"), so it is one here too.
  *
  * @param {unknown} value
  */
-function phpPrintable(value) {
+function platformPrintable(value) {
     if (value === true) {
         return '1';
     }
@@ -188,7 +188,7 @@ function phpPrintable(value) {
     }
 
     if (typeof value === 'number') {
-        return phpNumberToString(value);
+        return platformNumberToString(value);
     }
 
     if (typeof value === 'object' && !(value instanceof String)) {
@@ -199,14 +199,14 @@ function phpPrintable(value) {
 }
 
 /**
- * Twig's trim: PHP's trim, ltrim, or rtrim with PHP's default whitespace
+ * Twig's trim as the platform does it, with its default whitespace
  * (space, tab, newlines, vertical tab, NUL) or the given characters, and a
  * side (both, left, right), which twig.js ignores.
  *
  * @param {unknown} value
  * @param {unknown[]} [params]
  */
-function phpTrim(value, params = []) {
+function platformTrim(value, params = []) {
     if (value === undefined || value === null) {
         return '';
     }
@@ -289,7 +289,7 @@ const originalSlice = Twig.filters.slice;
  * @param {any} value
  * @param {unknown[]} params
  */
-function phpSlice(value, params) {
+function platformSlice(value, params) {
     if (value === undefined || value === null) {
         return '';
     }
@@ -315,29 +315,28 @@ function phpSlice(value, params) {
 }
 
 Twig.extendFilter('json', (value) => {
-    const encoded = phpJsonEncode(value);
+    const encoded = platformJsonEncode(value);
 
     return encoded === false ? '' : new Markup(encoded, 'html');
 });
 Twig.extendFilter('default', defaultKeepingFalse);
 Twig.extendFilter('number_format', numberFormat);
-Twig.extendFilter('trim', phpTrim);
+Twig.extendFilter('trim', platformTrim);
 Twig.extendFilter('first', endOf('first'));
 Twig.extendFilter('last', endOf('last'));
-Twig.extendFilter('slice', phpSlice);
-// PHP Twig: an undefined variable or missing key is null.
+Twig.extendFilter('slice', platformSlice);
+// On the platform an undefined variable or missing key is null.
 Twig.extendTest('null', (value) => value === null || value === undefined);
 Twig.extendTest('none', (value) => value === null || value === undefined);
 
 /**
- * PHP Twig's lexer unescaping of a string literal's body (Lexer
- * stripcslashes): \\n \\t and friends, \\\\, an escaped quote of either
+ * The platform's unescaping of a string literal's body: \\n \\t and friends, \\\\, an escaped quote of either
  * kind, \\x hex and octal escapes; any other escaped character stands for
  * itself. twig.js only unescapes the first escaped quote and \\n \\r.
  *
  * @param {string} body
  */
-export function phpStringLiteral(body) {
+export function platformStringLiteral(body) {
     const special = { f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
     let result = '';
 
@@ -400,22 +399,22 @@ export function phpStringLiteral(body) {
 Twig.extend((internal) => {
     Markup = internal.Markup;
 
-    internal.expression.handler['Twig.expression.type.string'].compile = function phpStringCompile(token, stack, output) {
+    internal.expression.handler['Twig.expression.type.string'].compile = function platformStringCompile(token, stack, output) {
         const { value } = token;
 
         delete token.match;
-        token.value = phpStringLiteral(value.slice(1, -1).replace(/\r\n?/g, '\n'));
+        token.value = platformStringLiteral(value.slice(1, -1).replace(/\r\n?/g, '\n'));
         output.push(token);
     };
 
     const originalOutput = internal.output;
 
-    internal.output = function phpOutput(output) {
-        return originalOutput.call(this, output.map(phpPrintable));
+    internal.output = function platformOutput(output) {
+        return originalOutput.call(this, output.map(platformPrintable));
     };
 
     // twig.js reads a missing key in brackets (files['missing']) as null,
-    // which `is defined` then accepts; PHP Twig treats it as undefined.
+    // which `is defined` then accepts; the platform treats it as undefined.
     const bracketHandler = internal.expression.handler['Twig.expression.type.key.brackets'];
     const originalBracketParse = bracketHandler.parse;
 
@@ -577,7 +576,7 @@ function validateTemplate(template, sandbox) {
 }
 
 /**
- * Two token level fixes so twig.js output matches PHP Twig. Twig prints a
+ * Two token level fixes so twig.js output matches the platform. Twig prints a
  * constant string literal as written (the escaper treats literals as
  * safe), while twig.js escapes it, so a print tag whose whole expression
  * is one string literal becomes raw text. And Twig drops the newline
