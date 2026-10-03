@@ -109,9 +109,10 @@ export function installSteps(workspaceRoot) {
  *
  * @param {string} workspaceRoot
  * @param {NodeJS.WritableStream} log
+ * @param {{command: string, args: string[], env: Record<string, string>}[]} [steps]
  * @returns {{ok: boolean, error?: string}}
  */
-export function installPlaywright(workspaceRoot, log) {
+export function installPlaywright(workspaceRoot, log, steps = installSteps(workspaceRoot)) {
     const cache = playwrightCacheDirectory(workspaceRoot);
 
     mkdirSync(cache, { recursive: true });
@@ -120,12 +121,14 @@ export function installPlaywright(workspaceRoot, log) {
         writeFileSync(join(cache, 'package.json'), `${JSON.stringify({ private: true, description: 'Playwright for npx @rafflex/dev test' }, null, 2)}\n`);
     }
 
-    for (const step of installSteps(workspaceRoot)) {
+    for (const step of steps) {
         log.write(`$ ${step.command === process.execPath ? 'node' : step.command} ${step.args.join(' ')}\n`);
 
         const result = spawnSync(step.command, step.args, {
             cwd: cache,
-            stdio: ['ignore', 'inherit', 'inherit'],
+            // The installers' progress goes to stderr, so `--json` keeps
+            // stdout to the one JSON document an AI parses.
+            stdio: ['ignore', 2, 2],
             env: { ...process.env, ...step.env },
             shell: process.platform === 'win32' && step.command === 'npm',
         });
