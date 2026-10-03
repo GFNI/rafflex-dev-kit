@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { defaultTagFor, fileSize, filenameStem } from './assets.js';
 import { contentTypesFor, contentVerdict, contentVerdictMessage } from './file-content.js';
 import { fixFor } from './listing-checks.js';
+import { filenameRefusal } from './upload-filenames.js';
+
+export { suggestedFilename } from './upload-filenames.js';
 import { lockedAssetRefusals, lockedFix } from './push-plan.js';
 import { compareWithRemote, readLocalState } from './sync-state.js';
 
@@ -56,56 +59,6 @@ const defaultUploadExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'gl
  */
 
 /**
- * A name the upload takes, as close to `filename` as possible: every run
- * of characters outside the pattern becomes a hyphen, so the derived tag
- * stays the same in the common case of spaces.
- *
- * @param {string} filename
- * @param {RegExp|null} pattern
- * @param {number|null} maxLength
- */
-export function suggestedFilename(filename, pattern, maxLength) {
-    const dot = filename.lastIndexOf('.');
-    const extension = dot > 0 ? filename.slice(dot).toLowerCase() : '';
-    let stem = (dot > 0 ? filename.slice(0, dot) : filename)
-        .normalize('NFKD')
-        .replace(/[̀-ͯ]/g, '')
-        .replace(/[^A-Za-z0-9._-]+/g, '-')
-        .replace(/-{2,}/g, '-')
-        .replace(/^[.-]+|-+$/g, '');
-
-    if (stem === '') {
-        stem = 'file';
-    }
-
-    if (maxLength !== null && stem.length + extension.length > maxLength) {
-        stem = stem.slice(0, Math.max(1, maxLength - extension.length));
-    }
-
-    const suggestion = `${stem}${extension}`;
-
-    return pattern === null || pattern.test(suggestion) ? suggestion : `file${extension}`;
-}
-
-/**
- * @param {any} uploadRules
- * @returns {RegExp|null}
- */
-function filenamePattern(uploadRules) {
-    const published = uploadRules?.filename_pattern;
-
-    if (typeof published?.pattern !== 'string' || published.js_compatible === false) {
-        return null;
-    }
-
-    try {
-        return new RegExp(published.pattern, String(published.flags ?? '').replace('g', ''));
-    } catch {
-        return null;
-    }
-}
-
-/**
  * Every media finding for a product.
  *
  * @param {import('./workspace.js').Product} product
@@ -122,23 +75,17 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
     const locked = lockedAssetRefusals(changes, product.manifest.remote, rules);
     const uploads = [...changes.assets.new, ...changes.assets.changed]
         .filter((asset) => asset.library === null && !locked.some((refusal) => refusal.path === asset.path));
-    const pattern = filenamePattern(uploadRules);
-    const maxLength = typeof uploadRules.max_filename_length === 'number' ? uploadRules.max_filename_length : null;
     /** @type {Issue[]} */
     const issues = [];
 
     for (const asset of uploads) {
-        const tooLong = maxLength !== null && asset.filename.length > maxLength;
-        const refused = pattern !== null && !pattern.test(asset.filename);
+        const refusal = filenameRefusal(asset.filename, uploadRules);
 
-        if (!tooLong && !refused) {
+        if (refusal === null) {
             continue;
         }
 
-        const reason = refused
-            ? String(refusals.invalid_filename ?? 'Use letters, numbers, dots, hyphens, and underscores only in file names.')
-            : `File names can be at most ${maxLength} characters.`;
-        const suggestion = suggestedFilename(asset.filename, pattern, maxLength);
+        const { reason, suggestion } = refusal;
         const folder = asset.path.slice(0, asset.path.length - asset.filename.length);
 
         issues.push(issue('asset_filename', `${asset.path} cannot be uploaded under this name. ${reason} Rename it to ${folder}${suggestion}${defaultTagFor(suggestion) === defaultTagFor(asset.filename) ? ` (its tag stays ${asset.tag})` : ` and use files['${defaultTagFor(suggestion)}'] in the template`}.`, asset.path));

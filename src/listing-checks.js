@@ -4,6 +4,7 @@ import { fileSize } from './assets.js';
 import { contentTypesFor, contentVerdict, contentVerdictMessage } from './file-content.js';
 import { defaultImageExtensions, imageRules, readListingImages } from './listing-images.js';
 import { ListingError, parseListing, resolveListingCategories } from './listing.js';
+import { filenameRefusal } from './upload-filenames.js';
 
 /**
  * The listing as the marketplace would take it (PRD 45), checked before a
@@ -145,15 +146,17 @@ export function categoryMessages(fields, categoriesDocument) {
 }
 
 /**
- * The findings for one listing image.
+ * The findings for one listing image. Its file name is held to the same
+ * upload rule as a media library file, because it is uploaded under it.
  *
  * @param {string} productDirectory
  * @param {import('./listing-images.js').LocalListingImage} image
  * @param {{max_bytes?: number, extensions?: string[]}} limits
  * @param {string} label "cover image" or "screenshot".
+ * @param {any} [uploadRules] rules.upload_rules, for the file name rule.
  * @returns {FileFinding[]}
  */
-function imageMessages(productDirectory, image, limits, label) {
+function imageMessages(productDirectory, image, limits, label, uploadRules = {}) {
     const extensions = Array.isArray(limits.extensions) && limits.extensions.length > 0 ? limits.extensions : defaultImageExtensions;
     const finding = (/** @type {string} */ message) => ({ file: image.path, message });
 
@@ -163,6 +166,13 @@ function imageMessages(productDirectory, image, limits, label) {
 
     /** @type {FileFinding[]} */
     const findings = [];
+    const nameRefusal = filenameRefusal(image.filename, uploadRules);
+
+    if (nameRefusal !== null) {
+        const folder = image.path.slice(0, image.path.length - image.filename.length);
+
+        findings.push(finding(`${image.path} cannot be uploaded under this name. ${nameRefusal.reason} Rename it to ${folder}${nameRefusal.suggestion}.`));
+    }
 
     if (isLimit(limits.max_bytes) && image.size > limits.max_bytes) {
         findings.push(finding(`${image.path} is ${fileSize(image.size)}; a ${label} can be at most ${fileSize(limits.max_bytes)}. Save it smaller (a JPEG, or fewer pixels).`));
@@ -196,7 +206,7 @@ export function listingImageFindings(productDirectory, rules, images = readListi
     }
 
     for (const cover of images.covers) {
-        findings.push(...imageMessages(productDirectory, cover, coverRules, 'cover image'));
+        findings.push(...imageMessages(productDirectory, cover, coverRules, 'cover image', rules?.upload_rules));
     }
 
     if (isLimit(screenshotRules.max_count) && images.screenshots.length > screenshotRules.max_count) {
@@ -204,7 +214,7 @@ export function listingImageFindings(productDirectory, rules, images = readListi
     }
 
     for (const screenshot of images.screenshots) {
-        findings.push(...imageMessages(productDirectory, screenshot, screenshotRules, 'screenshot'));
+        findings.push(...imageMessages(productDirectory, screenshot, screenshotRules, 'screenshot', rules?.upload_rules));
     }
 
     return findings;

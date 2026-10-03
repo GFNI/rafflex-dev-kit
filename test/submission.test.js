@@ -296,6 +296,24 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.deepEqual(broken.output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid').map((/** @type {any} */ issue) => [issue.file, issue.message]), [['listing.md', "listing.md's category_ids list is not closed with ]."]]);
     });
 
+    test('check blocks a cover or screenshot whose file name the upload refuses, with the name to use', async () => {
+        const root = temporaryWorkspace({ products: [{ title: 'Spin to Win', template, listing: listing(`category_ids: [${firstCategory.id}]`) }] });
+
+        addListingImages(join(root, 'games', 'spin-to-win'), {
+            'cover.png': png('cover'),
+            'screenshots/Screen Shot 2026-10-03 at 10.00.00.png': png('one'),
+            'screenshots/02-win.png': png('two'),
+        });
+
+        const { code, output } = await runJson(['check', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+
+        assert.equal(code, 1);
+        assert.deepEqual(output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid').map((/** @type {any} */ issue) => [issue.file, issue.message]), [[
+            'listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png',
+            'listing/screenshots/Screen Shot 2026-10-03 at 10.00.00.png cannot be uploaded under this name. Use letters, numbers, dots, hyphens, and underscores only in file names. Rename it to listing/screenshots/Screen-Shot-2026-10-03-at-10.00.00.png.',
+        ]]);
+    });
+
     test('check blocks names the upload refuses, duplicates, a full library, and content that is not what its name says', async () => {
         const root = temporaryWorkspace({
             products: [{
