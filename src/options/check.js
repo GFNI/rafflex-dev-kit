@@ -14,11 +14,43 @@ import { startingToggle, valueLimits } from './values.js';
  * - `option_override_invalid` (blocking) for everything in options.json
  *   the marketplace would refuse on a push, rolling the push back, and
  *   `option_warning` for what it would silently drop;
- * - `option_render_error` (blocking) when a scenario fails to render once
- *   every option is set to a sample value of its type, as a buyer may set
- *   it: long text, a large number, toggles flipped from their default, each
- *   choice in turn, a full repeater, and a ticked category.
+ * - `option_render_error` (blocking) when a scenario renders with the
+ *   default options but fails once every option is set to a sample value
+ *   of its type, as a buyer may set it: long text, a large everyday number
+ *   and zero, toggles flipped from their default, each choice in turn, a
+ *   full repeater, and a ticked category. It blocks only for a failure the
+ *   platform has too (`platformFailurePatterns`: a division by zero, text
+ *   that is not a time, an operation the sandbox refuses, and the like).
+ *   Any other failure may be a limit of the preview's renderer rather than
+ *   of the template, so it is an `option_warning` that says the
+ *   marketplace's check is the final verdict.
  */
+
+/**
+ * Failures the preview reproduces with the platform's own wording, so a
+ * render that fails with one fails on the marketplace too.
+ */
+export const platformFailurePatterns = Object.freeze([
+    /^Division by zero\b/,
+    /^Modulo by zero\b/,
+    /^Unsupported operand types\b/,
+    /^Failed to parse time string\b/,
+    /^Array to string conversion\b/,
+    /\bis not allowed\b/,
+    /^Unknown "[^"]+" (?:function|filter|test)\b/,
+    /^Too many nested for loops\b/,
+    /^Template rendering exceeded\b/,
+]);
+
+/**
+ * The sample for a number option: a large everyday value (a price, a
+ * count of a thousand) rather than a huge one. A buyer may type a huge
+ * number, but used as a count, a limit, or a number of decimals it finds
+ * the preview renderer's limits, not the template's bugs. Zero is tried
+ * as well, in a value set of its own, because a buyer may set it and a
+ * division by it fails.
+ */
+export const sampleNumber = 1000;
 
 export const optionFixes = Object.freeze({
     option_override_invalid: 'Fix options.json as the message says. The marketplace refuses the push, or drops the entry, otherwise.',
@@ -92,7 +124,7 @@ export function droppedOptionKeys(fields, liveKeys) {
  *
  * @param {InferredField} field
  * @param {number} round Which choice to use.
- * @param {{images: string[], categories: string[], limits: import('./values.js').ValueLimits, startingToggle: (field: InferredField) => boolean}} samples
+ * @param {{images: string[], categories: string[], limits: import('./values.js').ValueLimits, startingToggle: (field: InferredField) => boolean, zeroNumbers?: boolean}} samples
  * @returns {unknown}
  */
 function sampleValue(field, round, samples) {
@@ -102,7 +134,7 @@ function sampleValue(field, round, samples) {
         case 'toggle':
             return !samples.startingToggle(field);
         case 'number':
-            return 1000000;
+            return samples.zeroNumbers === true ? 0 : sampleNumber;
         case 'textarea':
             return longText(samples.limits.max_long_text_length);
         case 'colour':
@@ -122,7 +154,8 @@ function sampleValue(field, round, samples) {
 
 /**
  * The value sets a check renders with: one per choice of the field with
- * the most choices (at least one).
+ * the most choices (at least one), and, when the template has a number
+ * option, one more with every number at zero.
  *
  * @param {InferredField[]} fields
  * @param {{images: string[], categories: string[], limits: import('./values.js').ValueLimits}} samples
@@ -131,8 +164,13 @@ function sampleValue(field, round, samples) {
 export function sampleValueSets(fields, samples) {
     const flipFrom = (/** @type {InferredField} */ field) => startingToggle(field, samples.limits) === true;
     const rounds = Math.max(1, ...fields.map((field) => field.choices.length), ...fields.flatMap((field) => field.fields.map((child) => child.choices.length)));
+    const valueSet = (/** @type {number} */ round, /** @type {boolean} */ zeroNumbers) => Object.fromEntries(fields.map((field) => [field.key, sampleValue(field, round, { ...samples, startingToggle: flipFrom, zeroNumbers })]));
+    const hasNumber = fields.some((field) => field.type === 'number' || field.fields.some((child) => child.type === 'number'));
 
-    return Array.from({ length: rounds }, (_, round) => Object.fromEntries(fields.map((field) => [field.key, sampleValue(field, round, { ...samples, startingToggle: flipFrom })])));
+    return [
+        ...Array.from({ length: rounds }, (_, round) => valueSet(round, false)),
+        ...(hasNumber ? [valueSet(0, true)] : []),
+    ];
 }
 
 /**
@@ -200,20 +238,32 @@ export function optionIssues({ template, files, overrides, overridesError = null
     const images = assets?.images ?? Object.values(files);
     const categories = (contexts.shared?.categories ?? []).map((/** @type {{slug: string}} */ category) => category.slug);
     const valueSets = sampleValueSets(fields, { images, categories, limits: valueLimits(contexts) });
-    // A scenario that fails with nothing set is already a render error.
-    const seen = new Set(scenarios.map((scenario) => renderError(template, gameContext(contexts, { scenario, playCount, files, template, overrides }), rules)));
+    // A scenario that fails with nothing set is already a render error, so
+    // only scenarios that render with the defaults are tried.
+    const renderable = scenarios.filter((scenario) => renderError(template, gameContext(contexts, { scenario, playCount, files, template, overrides }), rules) === null);
+    const seen = new Set();
 
     for (const [round, values] of valueSets.entries()) {
-        for (const scenario of scenarios) {
+        for (const scenario of renderable) {
             try {
                 renderTemplate(template, gameContext(contexts, { scenario, playCount, files, template, options: values, overrides }), rules.sandbox);
             } catch (error) {
                 const message = String(/** @type {Error} */ (error).message);
 
-                if (!seen.has(message)) {
-                    seen.add(message);
-                    issues.push(optionIssue('option_render_error', `With every option set as a buyer may set it${valueSets.length > 1 ? ` (choice ${round + 1})` : ''}: ${message}`, rules, { scenario }));
+                if (seen.has(message)) {
+                    continue;
                 }
+
+                seen.add(message);
+
+                const which = valueSets.length > 1 ? ` (value set ${round + 1} of ${valueSets.length})` : '';
+
+                if (platformFailurePatterns.some((pattern) => pattern.test(message))) {
+                    issues.push(optionIssue('option_render_error', `With every option set as a buyer may set it${which}: ${message}`, rules, { scenario }));
+                    continue;
+                }
+
+                issues.push(optionIssue('option_warning', `With every option set as a buyer may set it${which}, the preview renderer could not render the template (${message}). This may be a limit of the preview rather than of the template; the marketplace's check is the final verdict.`, rules, { scenario }));
             }
         }
     }
