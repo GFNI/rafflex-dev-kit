@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { readCachedDocuments, resolveBaseUrl } from './remote.js';
+import { newerTime, readSyncTimes, syncTimeKey } from './sync-times.js';
 
 /**
  * The workspace: one folder per creator account holding every product in
@@ -221,7 +222,8 @@ export function assetTypeNamed(workspace, name) {
 
 /**
  * Read a product folder. The type comes from the type folder it sits in,
- * since the layout is the contract.
+ * since the layout is the contract. `remote.synced_at` is the newer of
+ * product.json's and the last successful sync recorded in `.rafflex/`.
  *
  * @param {Workspace} workspace
  * @param {AssetType} assetType
@@ -231,6 +233,13 @@ export function assetTypeNamed(workspace, name) {
 export function readProduct(workspace, assetType, folder) {
     const directory = join(workspace.root, assetType.folder, folder);
     const manifest = readProductJson(directory);
+
+    // A sync that changed nothing is recorded outside git; the newer time counts.
+    if (manifest.remote !== null) {
+        const recorded = readSyncTimes(workspace.root)[syncTimeKey({ slug: manifest.slug, path: `${assetType.folder}/${folder}` })];
+
+        manifest.remote = { ...manifest.remote, synced_at: /** @type {string} */ (newerTime(manifest.remote.synced_at, recorded)) };
+    }
 
     return {
         path: `${assetType.folder}/${folder}`,

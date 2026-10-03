@@ -9,6 +9,7 @@ import { formatListing } from '../listing.js';
 import { planListingImagesFor } from '../push-plan.js';
 import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { confinedWritePath, isPlainFilename, isSlug, resolvesInside } from '../safe-paths.js';
+import { recordSyncTime } from '../sync-times.js';
 import { bumpVersion, isVersion } from '../semver.js';
 import { compareWithRemote, latestReleasedVersion, readLocalState, remoteFromProduct, sha256 } from '../sync-state.js';
 import {
@@ -554,6 +555,8 @@ export async function runImportCommand(context) {
     } else {
         renameSync(temporary, target);
     }
+
+    recordSyncTime(workspace.root, { slug, path });
 
     const revertedFrom = typeof bundle.product.draft?.reverted_from === 'string' ? bundle.product.draft.reverted_from : null;
     const message = revertedFrom === null ? `Import ${slug} from the marketplace` : `Revert ${slug} to ${revertedFrom} as ${written.version}`;

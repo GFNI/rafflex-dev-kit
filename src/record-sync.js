@@ -5,6 +5,7 @@ import { commitProduct, currentBranch, gitState, lastPushCommit, runGit } from '
 import { isSlug, resolvesInside, slugPattern } from './safe-paths.js';
 import { bumpVersion, compareVersions, isVersion } from './semver.js';
 import { compareWithRemote, readLocalState, remoteFromProduct } from './sync-state.js';
+import { recordSyncTime } from './sync-times.js';
 import { formatProductJson, productFilename, writeProductJson } from './workspace.js';
 
 /**
@@ -205,7 +206,9 @@ export class UnsafeSlugError extends Error {}
  * the old path in `previous_paths` so commands still find it), the
  * version to work on, the branch, and the feedback when given (otherwise
  * the last recorded feedback is kept). A state that differs from the
- * recorded one only in its sync time is not written. Then commit:
+ * recorded one only in its sync time is not written; the time of every
+ * successful read goes to `.rafflex/sync-times.json` (outside git), so it
+ * still counts as fresh. Then commit:
  *
  * - `kind: "push"`: the product folder as "Push …" (the kit just pushed
  *   it), holding back `notUploaded` files so they still show as changes;
@@ -319,6 +322,8 @@ export function recordProductState({ workspace, product, payload, feedback, kind
     if (git.error !== null) {
         notes.push(git.error);
     }
+
+    recordSyncTime(workspace.root, { slug: payload.slug, path }, recorded.synced_at);
 
     if (version !== product.version) {
         notes.push(`Version ${product.version} -> ${version}${draft === null ? ' (the next minor after the live version)' : ' (the draft\'s version on the marketplace)'}.`);

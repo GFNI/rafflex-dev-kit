@@ -501,6 +501,47 @@ describe('push and release against the marketplace', () => {
         assert.equal(git(root, ['status', '--porcelain']), '');
     });
 
+    test('a sync that changes nothing still clears stale_remote, outside git; a fresh clone falls back to product.json', async () => {
+        const { root, path, directory } = await syncedProduct('fresh-read');
+        const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+        const manifest = productJson(root, path);
+
+        writeFileSync(join(directory, 'product.json'), `${JSON.stringify({ ...manifest, remote: { ...manifest.remote, synced_at: old } }, null, 2)}\n`);
+        rmSync(join(root, '.rafflex', 'sync-times.json'), { force: true });
+        git(root, ['add', '-A']);
+        git(root, ['commit', '-q', '-m', 'An old snapshot']);
+
+        const before = await kit(['status', 'fresh-read'], root);
+
+        assert.equal(before.output.products[0].stale_remote, true);
+
+        const head = git(root, ['rev-parse', 'HEAD']);
+        const synced = await kit(['synced', 'fresh-read', marketplace.issueLink('fresh-read')], root);
+
+        assert.equal(synced.code, 0, JSON.stringify(synced.output));
+        assert.equal(git(root, ['rev-parse', 'HEAD']), head);
+        assert.equal(git(root, ['status', '--porcelain']), '');
+        assert.equal(productJson(root, path).remote.synced_at, old);
+
+        const after = await kit(['status', 'fresh-read'], root);
+
+        assert.equal(after.output.products[0].stale_remote, false);
+        assert.ok(Date.parse(after.output.products[0].remote.synced_at) > Date.parse(old));
+
+        const plan = await kit(['plan', 'fresh-read'], root);
+
+        assert.equal(plan.output.stale_remote, false);
+
+        const clone = temporaryDirectory('rafflex-clone-');
+
+        execFileSync('git', ['clone', '-q', root, clone], { env: { ...process.env, ...isolatedGitEnv } });
+
+        const cloned = await kit(['status', 'fresh-read'], clone);
+
+        assert.equal(cloned.output.products[0].stale_remote, true);
+        assert.equal(cloned.output.products[0].remote.synced_at, old);
+    });
+
     test('a folder renamed by its first push is still found by its old path', async () => {
         const root = gitWorkspace([{ title: 'Docs Check', folder: 'docs-check-draft', template }]);
         const pushed = await kit(['push', 'docs-check-draft', marketplace.issueLink(null)], root);
