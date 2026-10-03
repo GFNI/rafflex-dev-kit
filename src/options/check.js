@@ -1,9 +1,9 @@
 import { gameContext } from '../context.js';
 import { renderTemplate } from '../twig-engine.js';
-import { inferOptions, valueKeys } from './infer.js';
+import { inferOptions, flattenedKeys } from './infer.js';
 import { overrideProblems } from './overrides.js';
 import { formFields } from './render-options.js';
-import { toggleDefault, valueLimits } from './values.js';
+import { startingToggle, valueLimits } from './values.js';
 
 /**
  * The option checks `check` adds to the platform's rules:
@@ -27,7 +27,7 @@ export const optionFixes = Object.freeze({
 
 /**
  * @typedef {import('../checker.js').Issue} Issue
- * @typedef {import('./infer.js').OptionField} OptionField
+ * @typedef {import('./infer.js').InferredField} InferredField
  */
 
 /**
@@ -59,17 +59,17 @@ export function optionWarningIssues(template, documents) {
  * The option keys to compare with a live version's: flattened item keys
  * (`slides.title`) only when the live keys carry them.
  *
- * @param {OptionField[]} fields
+ * @param {InferredField[]} fields
  * @param {string[]} liveKeys
  */
 export function comparableKeys(fields, liveKeys) {
-    return liveKeys.some((key) => key.includes('.')) ? [...valueKeys(fields).keys()] : fields.map((field) => field.key);
+    return liveKeys.some((key) => key.includes('.')) ? [...flattenedKeys(fields).keys()] : fields.map((field) => field.key);
 }
 
 /**
  * Options the live version reads that the local template no longer does.
  *
- * @param {OptionField[]} fields
+ * @param {InferredField[]} fields
  * @param {unknown} liveKeys
  * @returns {string[]}
  */
@@ -87,9 +87,9 @@ export function droppedOptionKeys(fields, liveKeys) {
 /**
  * A sample value of a field's type, the way a buyer may set it.
  *
- * @param {OptionField} field
+ * @param {InferredField} field
  * @param {number} round Which choice to use.
- * @param {{images: string[], categories: string[], limits: import('./values.js').ValueLimits, toggleDefault: (field: OptionField) => boolean}} samples
+ * @param {{images: string[], categories: string[], limits: import('./values.js').ValueLimits, startingToggle: (field: InferredField) => boolean}} samples
  * @returns {unknown}
  */
 function sampleValue(field, round, samples) {
@@ -97,7 +97,7 @@ function sampleValue(field, round, samples) {
 
     switch (field.type) {
         case 'toggle':
-            return !samples.toggleDefault(field);
+            return !samples.startingToggle(field);
         case 'number':
             return 1000000;
         case 'textarea':
@@ -121,15 +121,15 @@ function sampleValue(field, round, samples) {
  * The value sets a check renders with: one per choice of the field with
  * the most choices (at least one).
  *
- * @param {OptionField[]} fields
+ * @param {InferredField[]} fields
  * @param {{images: string[], categories: string[], limits: import('./values.js').ValueLimits}} samples
  * @returns {Record<string, unknown>[]}
  */
 export function sampleValueSets(fields, samples) {
-    const flipFrom = (/** @type {OptionField} */ field) => toggleDefault(field, samples.limits) === true;
+    const flipFrom = (/** @type {InferredField} */ field) => startingToggle(field, samples.limits) === true;
     const rounds = Math.max(1, ...fields.map((field) => field.choices.length), ...fields.flatMap((field) => field.fields.map((child) => child.choices.length)));
 
-    return Array.from({ length: rounds }, (_, round) => Object.fromEntries(fields.map((field) => [field.key, sampleValue(field, round, { ...samples, toggleDefault: flipFrom })])));
+    return Array.from({ length: rounds }, (_, round) => Object.fromEntries(fields.map((field) => [field.key, sampleValue(field, round, { ...samples, startingToggle: flipFrom })])));
 }
 
 /**

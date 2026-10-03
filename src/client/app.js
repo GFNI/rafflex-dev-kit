@@ -556,9 +556,13 @@ document.addEventListener('alpine:init', () => {
         },
 
         colourValue(field, value) {
-            const candidate = value ?? field.default;
+            const candidate = String(value ?? field.default ?? '');
 
-            return typeof candidate === 'string' && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : '#000000';
+            if (/^#[0-9a-f]{3}$/i.test(candidate)) {
+                return `#${[...candidate.slice(1)].map((digit) => digit + digit).join('')}`;
+            }
+
+            return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : '#000000';
         },
 
         toggleCategory(slug, ticked) {

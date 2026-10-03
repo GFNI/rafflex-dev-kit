@@ -1,6 +1,6 @@
 import { bumpVersion, compareVersions, isVersion } from '../semver.js';
 import { comparableKeys } from './check.js';
-import { inferOptions, valueKeys } from './infer.js';
+import { flattenedKeys, inferOptions } from './infer.js';
 
 /**
  * The version the platform would suggest for the version in progress,
@@ -26,7 +26,7 @@ function joined(names) {
  * @param {object} input
  * @param {unknown} input.liveVersion
  * @param {unknown} input.liveOptionKeys
- * @param {import('./infer.js').OptionField[]} input.fields The options the local template reads.
+ * @param {import('./infer.js').InferredField[]} input.fields The options the local template reads.
  * @returns {VersionSuggestion|null}
  */
 export function suggestVersion({ liveVersion, liveOptionKeys, fields }) {
@@ -36,7 +36,7 @@ export function suggestVersion({ liveVersion, liveOptionKeys, fields }) {
 
     const liveKeys = liveOptionKeys.filter((key) => typeof key === 'string');
     const localKeys = comparableKeys(fields, liveKeys);
-    const labels = valueKeys(fields);
+    const labels = flattenedKeys(fields);
     const removed = liveKeys.filter((key) => !localKeys.includes(key));
     const added = localKeys.filter((key) => !liveKeys.includes(key));
 

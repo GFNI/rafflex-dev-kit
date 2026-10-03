@@ -6,12 +6,12 @@
  * kit reaches the same values from the same input.
  *
  * A literal map from a template is held as a Map (insertion order, like
- * the platform's arrays); a float literal as a PhpFloat until it leaves
+ * the platform's arrays); a float literal as a PlatformFloat until it leaves
  * the inferrer, so its string form in a default expression and its JSON
  * (`-0.0`) follow the platform's.
  */
 
-export class PhpFloat {
+export class PlatformFloat {
     /**
      * @param {number} value
      */
@@ -29,7 +29,7 @@ const integerKey = /^(?:0|-?[1-9][0-9]*)$/;
  * @param {string} key
  * @returns {string|number}
  */
-export function phpArrayKey(key) {
+export function platformArrayKey(key) {
     if (integerKey.test(key)) {
         const number = Number(key);
 
@@ -51,7 +51,7 @@ function isListMap(map) {
     let expected = 0;
 
     for (const key of map.keys()) {
-        if (phpArrayKey(key) !== expected) {
+        if (platformArrayKey(key) !== expected) {
             return false;
         }
 
@@ -69,7 +69,7 @@ function isListMap(map) {
  * @returns {string}
  */
 export function literalSignature(value) {
-    if (value instanceof PhpFloat) {
+    if (value instanceof PlatformFloat) {
         return Object.is(value.value, -0) ? '-0.0' : JSON.stringify(value.value);
     }
 
@@ -81,7 +81,7 @@ export function literalSignature(value) {
         const entries = new Map();
 
         for (const [key, entry] of value) {
-            entries.set(String(phpArrayKey(key)), entry);
+            entries.set(String(platformArrayKey(key)), entry);
         }
 
         return `{${[...entries].map(([key, entry]) => `${JSON.stringify(key)}:${literalSignature(entry)}`).join(',')}}`;
@@ -102,7 +102,7 @@ export function literalSignature(value) {
  * @returns {unknown}
  */
 export function plainLiteral(value) {
-    if (value instanceof PhpFloat) {
+    if (value instanceof PlatformFloat) {
         return value.value;
     }
 
@@ -115,7 +115,7 @@ export function plainLiteral(value) {
         const object = {};
 
         for (const [key, entry] of value) {
-            object[String(phpArrayKey(key))] = plainLiteral(entry);
+            object[String(platformArrayKey(key))] = plainLiteral(entry);
         }
 
         return object;
@@ -134,7 +134,7 @@ export function plainLiteral(value) {
  *
  * @param {number} value
  */
-export function phpFloatString(value) {
+export function platformFloatString(value) {
     if (Number.isNaN(value)) {
         return 'NAN';
     }
@@ -166,7 +166,7 @@ export function phpFloatString(value) {
  *
  * @param {number} value
  */
-function isPhpInteger(value) {
+function isPlatformInteger(value) {
     return Number.isInteger(value) && Math.abs(value) < 9223372036854775808;
 }
 
@@ -175,13 +175,13 @@ function isPhpInteger(value) {
  *
  * @param {string|number|boolean} value
  */
-export function phpScalarString(value) {
+export function platformString(value) {
     if (typeof value === 'boolean') {
         return value ? '1' : '';
     }
 
     if (typeof value === 'number') {
-        return isPhpInteger(value) ? String(value) : phpFloatString(value);
+        return isPlatformInteger(value) ? String(value) : platformFloatString(value);
     }
 
     return value;
@@ -195,22 +195,22 @@ export function isScalar(value) {
     return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
-const phpTrimCharacters = ' \t\n\r\0\v';
+const platformTrimCharacters = ' \t\n\r\0\v';
 
 /**
  * The platform's trim with its default characters.
  *
  * @param {string} text
  */
-export function phpTrim(text) {
+export function platformTrim(text) {
     let start = 0;
     let end = text.length;
 
-    while (start < end && phpTrimCharacters.includes(text[start])) {
+    while (start < end && platformTrimCharacters.includes(text[start])) {
         start++;
     }
 
-    while (end > start && phpTrimCharacters.includes(text[end - 1])) {
+    while (end > start && platformTrimCharacters.includes(text[end - 1])) {
         end--;
     }
 
@@ -224,7 +224,7 @@ export function phpTrim(text) {
  * @param {unknown} value
  * @returns {boolean|null}
  */
-export function phpBoolean(value) {
+export function platformBoolean(value) {
     if (typeof value === 'boolean') {
         return value;
     }
@@ -237,7 +237,7 @@ export function phpBoolean(value) {
         return null;
     }
 
-    const text = phpScalarString(value).replace(/^[ \t\n\r\v]+|[ \t\n\r\v]+$/g, '').toLowerCase();
+    const text = platformString(value).replace(/^[ \t\n\r\v]+|[ \t\n\r\v]+$/g, '').toLowerCase();
 
     if (['1', 'true', 'on', 'yes'].includes(text)) {
         return true;
@@ -259,7 +259,7 @@ const numericString = /^[ \t\n\r\v\f]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[e
  * @param {unknown} value
  * @returns {number|null}
  */
-export function phpNumber(value) {
+export function platformNumber(value) {
     if (typeof value === 'number') {
         return value;
     }
@@ -276,7 +276,7 @@ export function phpNumber(value) {
  *
  * @param {unknown} value
  */
-export function isPhpList(value) {
+export function isPlatformList(value) {
     if (Array.isArray(value)) {
         return true;
     }
@@ -294,6 +294,6 @@ export function isPhpList(value) {
  * @param {unknown} value
  * @returns {value is Record<string, unknown>|unknown[]}
  */
-export function isPhpArray(value) {
+export function isPlatformArray(value) {
     return value !== null && typeof value === 'object';
 }

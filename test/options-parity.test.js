@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { blockContext } from '../src/context.js';
-import { fieldsWithOverrides, inferOptions } from '../src/options/infer.js';
-import { categorySlugs, narrowCatalogue, resolveOptions, valuesFromQuery } from '../src/options/values.js';
+import { applyOverrides, inferOptions } from '../src/options/infer.js';
+import { tickedCategorySlugs, narrowCatalogue, resolveOptions, valuesFromQuery } from '../src/options/values.js';
 import { fixtureDocuments } from './helpers/project.js';
 
 // The option fixture suite recorded from the platform: for each template,
@@ -45,7 +45,7 @@ describe('the options inferrer matches the platform', () => {
     for (const fixture of recorded.fixtures) {
         describe(fixture.name, () => {
             const inferred = inferOptions(fixture.template, contexts);
-            const fields = fieldsWithOverrides(inferred.fields, fixture.overrides);
+            const fields = applyOverrides(inferred.fields, fixture.overrides);
 
             test('fields, field for field', () => {
                 assert.equal(inferred.fields.length, fixture.fields.length, inferred.fields.map((field) => field.key).join(', '));
@@ -70,7 +70,7 @@ describe('the options inferrer matches the platform', () => {
                     const resolved = resolveOptions(fields, recordedCase.values, recorded.allowed_image_urls);
 
                     assert.deepEqual(asPlatformJson(resolved), asPlatformJson(recordedCase.resolved), recordedCase.name);
-                    assert.deepEqual(categorySlugs(fields, recordedCase.values, contexts.shared.categories), recordedCase.category_slugs, recordedCase.name);
+                    assert.deepEqual(tickedCategorySlugs(fields, recordedCase.values, contexts.shared.categories), recordedCase.category_slugs, recordedCase.name);
                 }
             });
 

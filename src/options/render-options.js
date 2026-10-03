@@ -1,6 +1,6 @@
-import { fieldsWithOverrides, inferOptions } from './infer.js';
+import { applyOverrides, inferOptions } from './infer.js';
 import { normaliseOverrides } from './overrides.js';
-import { categorySlugs, narrowCatalogue, resolveOptions, valueLimits } from './values.js';
+import { tickedCategorySlugs, narrowCatalogue, resolveOptions, valueLimits } from './values.js';
 
 /**
  * What a render receives from a template's options: the resolved
@@ -18,12 +18,12 @@ import { categorySlugs, narrowCatalogue, resolveOptions, valueLimits } from './v
  * @param {string} template
  * @param {unknown} overrides options.json's content
  * @param {any} [contexts]
- * @returns {{fields: import('./infer.js').OptionField[], warnings: string[]}}
+ * @returns {{fields: import('./infer.js').InferredField[], warnings: string[]}}
  */
 export function formFields(template, overrides, contexts) {
     const inferred = inferOptions(template, contexts);
 
-    return { fields: fieldsWithOverrides(inferred.fields, normaliseOverrides(overrides, inferred.fields)), warnings: inferred.warnings };
+    return { fields: applyOverrides(inferred.fields, normaliseOverrides(overrides, inferred.fields)), warnings: inferred.warnings };
 }
 
 /**
@@ -40,7 +40,7 @@ export function renderOptions({ contexts, template, files, shared, values = {}, 
     const { fields } = formFields(template, overrides, contexts);
     const allowedImageUrls = Array.isArray(files) ? [] : Object.values(files);
     const options = resolveOptions(fields, values, allowedImageUrls, valueLimits(contexts));
-    const slugs = categorySlugs(fields, values, Array.isArray(shared?.categories) ? shared.categories : []);
+    const slugs = tickedCategorySlugs(fields, values, Array.isArray(shared?.categories) ? shared.categories : []);
 
     return { options, shared: narrowCatalogue(shared, slugs) };
 }

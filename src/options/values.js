@@ -1,4 +1,4 @@
-import { isPhpArray, isPhpList, isScalar, phpBoolean, phpNumber, phpScalarString, phpTrim } from './php-values.js';
+import { isPlatformArray, isPlatformList, isScalar, platformBoolean, platformNumber, platformString, platformTrim } from './platform-values.js';
 
 /**
  * Option values a site owner (or the app's options form) sets, turned into
@@ -89,7 +89,7 @@ export function valuesFromQuery(query, limits = defaultLimits) {
 
     // The platform decodes at most 6 levels, the value inside the deepest
     // array counting as one.
-    if (!isPhpArray(decoded) || isPhpList(decoded) || depthOf(decoded) > 5) {
+    if (!isPlatformArray(decoded) || isPlatformList(decoded) || depthOf(decoded) > 5) {
         return {};
     }
 
@@ -100,11 +100,11 @@ export function valuesFromQuery(query, limits = defaultLimits) {
  * An unset toggle resolves to its default rather than staying missing; a
  * toggle without a literal default to the published `toggle_unset`.
  *
- * @param {import('./infer.js').OptionField} field
+ * @param {import('./infer.js').InferredField} field
  * @param {ValueLimits} limits
  * @returns {boolean|null}
  */
-export function toggleDefault(field, limits) {
+export function startingToggle(field, limits) {
     if (field.type !== 'toggle') {
         return null;
     }
@@ -113,7 +113,7 @@ export function toggleDefault(field, limits) {
         return limits.toggle_unset;
     }
 
-    return phpBoolean(field.default) ?? false;
+    return platformBoolean(field.default) ?? false;
 }
 
 /**
@@ -127,7 +127,7 @@ function text(value, maxLength, choices) {
         return null;
     }
 
-    const trimmed = Array.from(phpTrim(phpScalarString(value))).slice(0, maxLength).join('');
+    const trimmed = Array.from(platformTrim(platformString(value))).slice(0, maxLength).join('');
 
     if (trimmed === '') {
         return null;
@@ -141,7 +141,7 @@ function text(value, maxLength, choices) {
 }
 
 /**
- * @param {import('./infer.js').OptionField} field
+ * @param {import('./infer.js').InferredField} field
  * @param {unknown} value
  * @param {string[]} allowedImageUrls
  * @param {ValueLimits} limits
@@ -150,9 +150,9 @@ function text(value, maxLength, choices) {
 function coerce(field, value, allowedImageUrls, limits) {
     switch (field.type) {
         case 'toggle':
-            return phpBoolean(value);
+            return platformBoolean(value);
         case 'number':
-            return phpNumber(value);
+            return platformNumber(value);
         case 'repeater':
             return items(field, value, allowedImageUrls, limits);
         case 'image':
@@ -167,14 +167,14 @@ function coerce(field, value, allowedImageUrls, limits) {
 }
 
 /**
- * @param {import('./infer.js').OptionField} field
+ * @param {import('./infer.js').InferredField} field
  * @param {unknown} value
  * @param {string[]} allowedImageUrls
  * @param {ValueLimits} limits
  * @returns {(Record<string, unknown>|unknown[])[]|null}
  */
 function items(field, value, allowedImageUrls, limits) {
-    if (!isPhpArray(value) || !isPhpList(value)) {
+    if (!isPlatformArray(value) || !isPlatformList(value)) {
         return null;
     }
 
@@ -182,7 +182,7 @@ function items(field, value, allowedImageUrls, limits) {
     const resolved = [];
 
     for (const item of Object.values(value).slice(0, limits.max_repeater_items)) {
-        if (!isPhpArray(item)) {
+        if (!isPlatformArray(item)) {
             continue;
         }
 
@@ -192,7 +192,7 @@ function items(field, value, allowedImageUrls, limits) {
         for (const child of field.fields) {
             let childValue = Object.hasOwn(item, child.key) ? coerce(child, /** @type {any} */ (item)[child.key], allowedImageUrls, limits) : null;
 
-            childValue ??= toggleDefault(child, limits);
+            childValue ??= startingToggle(child, limits);
 
             if (childValue !== null) {
                 resolvedItem[child.key] = childValue;
@@ -209,7 +209,7 @@ function items(field, value, allowedImageUrls, limits) {
  * The options a template renders with, from the fields it declares and the
  * values set (none: only toggles resolve, to their defaults).
  *
- * @param {import('./infer.js').OptionField[]} fields
+ * @param {import('./infer.js').InferredField[]} fields
  * @param {Record<string, unknown>} [values]
  * @param {string[]|null} [allowedImageUrls] Image values must be one of these (the product's own files); null allows none.
  * @param {ValueLimits} [limits]
@@ -226,7 +226,7 @@ export function resolveOptions(fields, values = {}, allowedImageUrls = null, lim
 
         let value = Object.hasOwn(values, field.key) ? coerce(field, values[field.key], allowedImageUrls ?? [], limits) : null;
 
-        value ??= toggleDefault(field, limits);
+        value ??= startingToggle(field, limits);
 
         if (value !== null) {
             options[field.key] = value;
@@ -241,19 +241,19 @@ export function resolveOptions(fields, values = {}, allowedImageUrls = null, lim
  * or none when the template has no filter field or nothing valid was
  * ticked (which filters nothing).
  *
- * @param {import('./infer.js').OptionField[]} fields
+ * @param {import('./infer.js').InferredField[]} fields
  * @param {Record<string, unknown>} values
  * @param {{slug: string}[]} sampleCategories
  * @returns {string[]}
  */
-export function categorySlugs(fields, values, sampleCategories) {
+export function tickedCategorySlugs(fields, values, sampleCategories) {
     if (!fields.some((field) => field.type === 'categories')) {
         return [];
     }
 
     const ticked = values.categories;
 
-    if (!isPhpArray(ticked)) {
+    if (!isPlatformArray(ticked)) {
         return [];
     }
 

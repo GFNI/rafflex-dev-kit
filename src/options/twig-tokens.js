@@ -118,7 +118,7 @@ function normaliseNewlines(text) {
 }
 
 /**
- * PHP's rtrim with its default characters, or the given ones.
+ * The platform's rtrim with its default characters, or the given ones.
  *
  * @param {string} text
  * @param {string} [characters]

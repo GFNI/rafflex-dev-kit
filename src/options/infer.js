@@ -1,4 +1,4 @@
-import { literalSignature, phpArrayKey, PhpFloat, phpFloatString, phpTrim, plainLiteral } from './php-values.js';
+import { literalSignature, platformArrayKey, PlatformFloat, platformFloatString, platformTrim, plainLiteral } from './platform-values.js';
 import { tokenizeTemplate, TemplateTokenError } from './twig-tokens.js';
 
 /**
@@ -17,8 +17,8 @@ import { tokenizeTemplate, TemplateTokenError } from './twig-tokens.js';
  */
 
 /**
- * @typedef {{key: string, type: string, label: string, help: string|null, default: unknown, default_expression: string|null, choices: string[], fields: OptionField[]}} OptionField
- * @typedef {{fields: OptionField[], warnings: string[]}} InferredOptions
+ * @typedef {{key: string, type: string, label: string, help: string|null, default: unknown, default_expression: string|null, choices: string[], fields: InferredField[]}} InferredField
+ * @typedef {{fields: InferredField[], warnings: string[]}} OptionInference
  * @typedef {{names?: string[], prefixes?: string[], suffixes?: string[]}} Convention
  * @typedef {{order: string[], types: Record<string, Convention>}} Conventions
  */
@@ -85,8 +85,8 @@ export function inferenceRules(contexts) {
  *
  * @param {string} key
  */
-export function labelFor(key) {
-    const label = phpTrim(key.replace(/_/g, ' '));
+export function defaultLabel(key) {
+    const label = platformTrim(key.replace(/_/g, ' '));
 
     return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -133,7 +133,7 @@ export function inferType(key, defaultValue, conventions = defaultConventions) {
         return 'toggle';
     }
 
-    if (typeof defaultValue === 'number' || defaultValue instanceof PhpFloat) {
+    if (typeof defaultValue === 'number' || defaultValue instanceof PlatformFloat) {
         return 'number';
     }
 
@@ -217,13 +217,13 @@ function scanTokens(tokens) {
         }
 
         if (token.type === 'number') {
-            return { value: token.float ? new PhpFloat(token.value) : token.value, next: index + 1 };
+            return { value: token.float ? new PlatformFloat(token.value) : token.value, next: index + 1 };
         }
 
         if (isSymbol(index, '-') && isType(index + 1, 'number')) {
             const number = tokens[index + 1];
 
-            return { value: number.float ? new PhpFloat(-number.value) : -number.value, next: index + 2 };
+            return { value: number.float ? new PlatformFloat(-number.value) : -number.value, next: index + 2 };
         }
 
         if (token.type === 'name') {
@@ -299,7 +299,7 @@ function scanTokens(tokens) {
             }
 
             // The platform's array keys: "1" and 1 are one key.
-            const existing = [...hash.keys()].find((candidate) => phpArrayKey(candidate) === phpArrayKey(key));
+            const existing = [...hash.keys()].find((candidate) => platformArrayKey(candidate) === platformArrayKey(key));
 
             hash.set(existing ?? key, value.value);
             index = value.next;
@@ -327,7 +327,7 @@ function scanTokens(tokens) {
         }
 
         if (token.type === 'number') {
-            return token.float ? phpFloatString(token.value) : String(token.value);
+            return token.float ? platformFloatString(token.value) : String(token.value);
         }
 
         return String(token.value);
@@ -443,7 +443,7 @@ function scanTokens(tokens) {
             }
 
             for (const [itemKey, itemValue] of item) {
-                if (typeof phpArrayKey(itemKey) === 'string' && keyPattern.test(itemKey) && (found.itemKeys.get(itemKey) ?? null) === null) {
+                if (typeof platformArrayKey(itemKey) === 'string' && keyPattern.test(itemKey) && (found.itemKeys.get(itemKey) ?? null) === null) {
                     found.itemKeys.set(itemKey, itemValue);
                 }
             }
@@ -519,7 +519,7 @@ function isListLiteral(map) {
     let expected = 0;
 
     for (const key of map.keys()) {
-        if (phpArrayKey(key) !== expected) {
+        if (platformArrayKey(key) !== expected) {
             return false;
         }
 
@@ -542,8 +542,8 @@ function warningsFor(key, defaults, rules) {
 }
 
 /**
- * @param {{key: string, type: string, label: string, help?: string|null, defaultValue?: unknown, expression?: string|null, choices?: string[], fields?: OptionField[]}} parts
- * @returns {OptionField}
+ * @param {{key: string, type: string, label: string, help?: string|null, defaultValue?: unknown, expression?: string|null, choices?: string[], fields?: InferredField[]}} parts
+ * @returns {InferredField}
  */
 function makeField({ key, type, label, help = null, defaultValue = null, expression = null, choices = [], fields = [] }) {
     return { key, type, label, help, default: plainLiteral(defaultValue), default_expression: expression, choices, fields };
@@ -553,7 +553,7 @@ function makeField({ key, type, label, help = null, defaultValue = null, express
  * The platform's Categories filter field.
  *
  * @param {InferenceRules} rules
- * @returns {OptionField}
+ * @returns {InferredField}
  */
 export function categoriesFilterField(rules) {
     return { key: categoriesKey, type: 'categories', label: rules.categoriesField.label, help: rules.categoriesField.help, default: [], default_expression: null, choices: [], fields: [] };
@@ -565,7 +565,7 @@ export function categoriesFilterField(rules) {
  *
  * @param {string} template
  * @param {any} [contexts] contexts.json, for the published inference rules.
- * @returns {InferredOptions}
+ * @returns {OptionInference}
  */
 export function inferOptions(template, contexts) {
     const rules = inferenceRules(contexts);
@@ -587,7 +587,7 @@ export function inferOptions(template, contexts) {
     }
 
     const { found, readsCatalogue } = scanTokens(tokens);
-    /** @type {OptionField[]} */
+    /** @type {InferredField[]} */
     const fields = [];
     /** @type {string[]} */
     const warnings = [];
@@ -606,7 +606,7 @@ export function inferOptions(template, contexts) {
         fields.push(makeField({
             key,
             type,
-            label: labelFor(key),
+            label: defaultLabel(key),
             defaultValue: first.value,
             expression: first.expression,
             fields: type === 'repeater' ? childrenOf(key, entry, warnings, rules) : [],
@@ -628,10 +628,10 @@ export function inferOptions(template, contexts) {
  * @param {FoundField} entry
  * @param {string[]} warnings
  * @param {InferenceRules} rules
- * @returns {OptionField[]}
+ * @returns {InferredField[]}
  */
 function childrenOf(repeater, entry, warnings, rules) {
-    /** @type {Map<string, OptionField>} */
+    /** @type {Map<string, InferredField>} */
     const children = new Map();
 
     for (const [childKey, defaults] of entry.children) {
@@ -642,7 +642,7 @@ function childrenOf(repeater, entry, warnings, rules) {
         children.set(childKey, makeField({
             key: childKey,
             type: inferType(childKey, typeSource, rules.conventions),
-            label: labelFor(childKey),
+            label: defaultLabel(childKey),
             defaultValue: first.value,
             expression: first.expression,
         }));
@@ -653,7 +653,7 @@ function childrenOf(repeater, entry, warnings, rules) {
             continue;
         }
 
-        children.set(childKey, makeField({ key: childKey, type: inferType(childKey, itemValue, rules.conventions), label: labelFor(childKey) }));
+        children.set(childKey, makeField({ key: childKey, type: inferType(childKey, itemValue, rules.conventions), label: defaultLabel(childKey) }));
     }
 
     return [...children.values()];
@@ -665,11 +665,11 @@ function childrenOf(repeater, entry, warnings, rules) {
  * supports a select. Overrides for keys the template does not read are
  * ignored.
  *
- * @param {OptionField[]} fields
+ * @param {InferredField[]} fields
  * @param {unknown} overrides
- * @returns {OptionField[]}
+ * @returns {InferredField[]}
  */
-export function fieldsWithOverrides(fields, overrides) {
+export function applyOverrides(fields, overrides) {
     if (overrides === null || typeof overrides !== 'object' || Array.isArray(overrides)) {
         return fields;
     }
@@ -681,8 +681,8 @@ export function fieldsWithOverrides(fields, overrides) {
             return field;
         }
 
-        const label = typeof override.label === 'string' ? phpTrim(override.label) : '';
-        const help = typeof override.help === 'string' ? phpTrim(override.help) : '';
+        const label = typeof override.label === 'string' ? platformTrim(override.label) : '';
+        const help = typeof override.help === 'string' ? platformTrim(override.help) : '';
         const choices = supportsChoices(field.type) && Array.isArray(override.choices) ? override.choices.filter((/** @type {unknown} */ choice) => typeof choice === 'string') : [];
 
         return {
@@ -698,10 +698,10 @@ export function fieldsWithOverrides(fields, overrides) {
  * The flattened keys a site can hold values under: top level keys, plus
  * `repeater.child` for repeater item fields, each with its label.
  *
- * @param {OptionField[]} fields
+ * @param {InferredField[]} fields
  * @returns {Map<string, string>}
  */
-export function valueKeys(fields) {
+export function flattenedKeys(fields) {
     /** @type {Map<string, string>} */
     const keys = new Map();
 

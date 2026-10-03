@@ -1,7 +1,7 @@
 import { compilePatterns, matchPatterns } from '../banned-patterns.js';
 import { scriptViolations } from '../script-rules.js';
 import { inferOptions, supportsChoices } from './infer.js';
-import { phpNumber, phpTrim } from './php-values.js';
+import { platformNumber, platformTrim } from './platform-values.js';
 
 /**
  * options.json holds the creator's overrides for the options a template
@@ -44,8 +44,8 @@ function isTextList(choices) {
  * @param {string} second
  */
 function sameChoice(first, second) {
-    const firstNumber = phpNumber(first);
-    const secondNumber = phpNumber(second);
+    const firstNumber = platformNumber(first);
+    const secondNumber = platformNumber(second);
 
     if (firstNumber !== null && secondNumber !== null) {
         return firstNumber === secondNumber;
@@ -70,7 +70,7 @@ export function normaliseChoices(choices) {
     const normalised = [];
 
     for (const choice of Object.values(choices).join('\n').split(/[\n,]/)) {
-        const trimmed = phpTrim(choice);
+        const trimmed = platformTrim(choice);
 
         if (trimmed !== '' && !normalised.some((existing) => sameChoice(existing, trimmed))) {
             normalised.push(trimmed);
@@ -85,7 +85,7 @@ export function normaliseChoices(choices) {
  * template's fields.
  *
  * @param {unknown} overrides
- * @param {import('./infer.js').OptionField[]} fields
+ * @param {import('./infer.js').InferredField[]} fields
  * @returns {Record<string, {label?: string, help?: string, choices?: string[]}>}
  */
 export function normaliseOverrides(overrides, fields) {
@@ -107,8 +107,8 @@ export function normaliseOverrides(overrides, fields) {
 
         /** @type {{label?: string, help?: string, choices?: string[]}} */
         const entry = {};
-        const label = typeof override.label === 'string' ? phpTrim(override.label) : '';
-        const help = typeof override.help === 'string' ? phpTrim(override.help) : '';
+        const label = typeof override.label === 'string' ? platformTrim(override.label) : '';
+        const help = typeof override.help === 'string' ? platformTrim(override.help) : '';
 
         if (label !== '') {
             entry.label = label;
@@ -163,8 +163,8 @@ export function normaliseOverrideText(overrides) {
             const value = override[part];
 
             if (typeof value === 'string') {
-                if (phpTrim(value) !== '') {
-                    entry[part] = phpTrim(value);
+                if (platformTrim(value) !== '') {
+                    entry[part] = platformTrim(value);
                 }
             } else if (value !== null && value !== undefined) {
                 entry[part] = value;
@@ -229,7 +229,7 @@ function characters(value) {
  * publishes them.
  *
  * @param {unknown} overrides
- * @param {import('./infer.js').OptionField[]} fields
+ * @param {import('./infer.js').InferredField[]} fields
  * @param {any} rules rules.json
  * @returns {OverrideProblem[]}
  */
