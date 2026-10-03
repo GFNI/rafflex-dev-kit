@@ -29,7 +29,7 @@ rafflex/
       CHANGELOG.md    release notes, Unreleased on top
       assets/
       tests/          your own browser specs (optional, committed, never pushed)
-      .results/       screenshots and the last test run (git ignored, never pushed)
+      .results/       screenshots, the last test run, and verify.json (git ignored, never pushed)
   blocks/
     winner-wall/
 ```
