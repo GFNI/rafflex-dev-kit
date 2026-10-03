@@ -1,7 +1,7 @@
 {
     "contract": 1,
-    "version": "2d10cb49711e",
-    "generated_at": "2026-10-03T21:31:03+00:00",
+    "version": "7843f716c8ca",
+    "generated_at": "2026-10-03T22:32:50+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
@@ -14,7 +14,7 @@
     "versions": {
         "rules": "971e0e729152",
         "contexts": "33cab89e4cbc",
-        "skeletons": "86f6eb779b3e",
+        "skeletons": "61f35964958d",
         "libraries": "493322f3af02",
         "fixtures": "744e2c3c4f86",
         "prompts": "3218c80a3f7f",
