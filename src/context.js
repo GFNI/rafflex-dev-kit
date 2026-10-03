@@ -83,7 +83,7 @@ export function nearestPlayCount(contexts, scenario, playCount) {
 }
 
 /**
- * PHP has one array type, so an empty map is `[]`. Keeping it an empty
+ * The platform has one array type, so an empty map is `[]`. Keeping it an empty
  * array keeps `{{ files|json }}` identical to the platform's output.
  *
  * @param {Record<string, string>|unknown[]} files

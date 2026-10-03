@@ -52,7 +52,7 @@ export function mimeTypeOf(filename) {
 }
 
 /**
- * Option overrides in one shape: an empty PHP array, null, or a missing
+ * Option overrides in one shape: an empty array from the platform, null, or a missing
  * file all mean no overrides.
  *
  * @param {unknown} overrides
@@ -361,7 +361,7 @@ export function latestReleasedVersion(product) {
  * Map a get_product result to product.json's `remote` block: the server's
  * state with every pushed part reduced to the hash the kit compares local
  * files with. Option overrides are hashed by the kit (sorted key JSON, an
- * empty PHP array the same as {}), so both sides never disagree on JSON
+ * empty array the same as {}), so both sides never disagree on JSON
  * encoding; the live template hash is the server's own (exact bytes).
  *
  * When there is no draft, `live` records the latest released version's

@@ -51,7 +51,7 @@ export function slugify(title) {
 }
 
 /**
- * The filename without its last extension, as PHP's pathinfo reads it.
+ * The filename without its last extension, as the platform reads it.
  *
  * @param {string} filename
  */

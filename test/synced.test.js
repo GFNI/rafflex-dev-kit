@@ -105,7 +105,7 @@ describe('synced', () => {
 });
 
 describe('mapping get_product to remote', () => {
-    test('hashes empty option overrides the same whether PHP sent [] or {}', () => {
+    test('hashes empty option overrides the same whether the platform sent [] or {}', () => {
         const fromArray = remoteFromProduct({ ...spin, draft: { ...spin.draft, option_overrides: [] } });
         const fromObject = remoteFromProduct({ ...spin, draft: { ...spin.draft, option_overrides: {} } });
 

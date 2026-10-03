@@ -1,6 +1,6 @@
 /**
  * The sandbox whitelist as a lint. twig.js has no sandbox, so instead of
- * refusing at render time like PHP Twig's SecurityPolicy, the kit walks the
+ * refusing at render time like the platform's sandbox, the kit walks the
  * token tree twig.js parses a template into and reports every tag, filter,
  * function, and (when the rules restrict them) test the whitelist does not
  * allow, with the line it appears on.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { phpJsonEncode } from '../src/php-json.js';
-import { compileTemplate, phpNumberToString, renderTemplate, TemplateRenderError } from '../src/twig-engine.js';
+import { platformJsonEncode } from '../src/platform-json.js';
+import { compileTemplate, platformNumberToString, renderTemplate, TemplateRenderError } from '../src/twig-engine.js';
 import { lintTemplate } from '../src/twig-lint.js';
 import { fixtureDocuments } from './helpers/project.js';
 
@@ -105,20 +105,20 @@ describe('platform pre render checks and caps', () => {
     });
 });
 
-describe('PHP Twig behaviour', () => {
+describe('platform Twig behaviour', () => {
     test('default keeps false but replaces empty values', () => {
         const template = '{{ t|default("d") ? "y" : "n" }}{{ f|default(true) ? "y" : "n" }}{{ e|default("d") }}{{ a|default("d") }}{{ m|default("d") }}';
 
         assert.equal(renderTemplate(template, { t: true, f: false, e: '', a: [] }, sandbox), 'ynddd');
     });
 
-    test('scalars print as PHP prints them', () => {
+    test('scalars print as the platform prints them', () => {
         assert.equal(renderTemplate('[{{ true }}][{{ false }}][{{ null }}][{{ 0.1 + 0.2 }}][{{ 2.5 }}]', {}, sandbox), '[1][][][0.3][2.5]');
-        assert.equal(phpNumberToString(1e25), '1.0E+25');
-        assert.equal(phpNumberToString(0.00001), '1.0E-5');
+        assert.equal(platformNumberToString(1e25), '1.0E+25');
+        assert.equal(platformNumberToString(0.00001), '1.0E-5');
     });
 
-    test('string literals unescape like PHP Twig and print unescaped', () => {
+    test('string literals unescape like the platform and print unescaped', () => {
         assert.equal(renderTemplate('{{ "a \\"q\\" \\\\ <b>" }}', {}, sandbox), 'a "q" \\ <b>');
     });
 
@@ -144,29 +144,28 @@ describe('PHP Twig behaviour', () => {
 });
 
 describe('json filter', () => {
-    // Expected strings are PHP json_encode output with JSON_HEX_TAG |
-    // JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT, as the platform's filter.
+    // Expected strings are the platform's json filter output.
     test('escapes slashes, HTML significant characters, and non ASCII', () => {
-        assert.equal(phpJsonEncode('Tom\'s <b>"q"</b> & café £5 / 😀 \\'), '"Tom\\u0027s \\u003Cb\\u003E\\u0022q\\u0022\\u003C\\/b\\u003E \\u0026 caf\\u00e9 \\u00a35 \\/ \\ud83d\\ude00 \\\\"');
+        assert.equal(platformJsonEncode('Tom\'s <b>"q"</b> & café £5 / 😀 \\'), '"Tom\\u0027s \\u003Cb\\u003E\\u0022q\\u0022\\u003C\\/b\\u003E \\u0026 caf\\u00e9 \\u00a35 \\/ \\ud83d\\ude00 \\\\"');
     });
 
-    test('encodes control characters as PHP does', () => {
-        assert.equal(phpJsonEncode('a\nb\tc\u0001'), '"a\\nb\\tc\\u0001"');
+    test('encodes control characters as the platform does', () => {
+        assert.equal(platformJsonEncode('a\nb\tc\u0001'), '"a\\nb\\tc\\u0001"');
     });
 
     test('encodes numbers, booleans, and null', () => {
-        assert.equal(phpJsonEncode([1, 2.5, -3, 0, 1000000, true, false, null]), '[1,2.5,-3,0,1000000,true,false,null]');
-        assert.equal(phpJsonEncode(1e25), '1.0e+25');
+        assert.equal(platformJsonEncode([1, 2.5, -3, 0, 1000000, true, false, null]), '[1,2.5,-3,0,1000000,true,false,null]');
+        assert.equal(platformJsonEncode(1e25), '1.0e+25');
     });
 
     test('empty maps and lists encode as []', () => {
-        assert.equal(phpJsonEncode({}), '[]');
-        assert.equal(phpJsonEncode([]), '[]');
-        assert.equal(phpJsonEncode({ 0: 'a', 1: 'b' }), '["a","b"]');
+        assert.equal(platformJsonEncode({}), '[]');
+        assert.equal(platformJsonEncode([]), '[]');
+        assert.equal(platformJsonEncode({ 0: 'a', 1: 'b' }), '["a","b"]');
     });
 
     test('maps keep their key order', () => {
-        assert.equal(phpJsonEncode({ a: 1, 'b-c': 'x/y' }), '{"a":1,"b-c":"x\\/y"}');
+        assert.equal(platformJsonEncode({ a: 1, 'b-c': 'x/y' }), '{"a":1,"b-c":"x\\/y"}');
         assert.equal(renderTemplate('{{ {b: 1, a: 2}|json }}', {}, sandbox), '{"b":1,"a":2}');
     });
 

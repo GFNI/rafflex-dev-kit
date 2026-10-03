@@ -1,15 +1,13 @@
 /**
- * PHP's json_encode as the platform's `json` filter calls it:
- * JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT, without
- * JSON_UNESCAPED_SLASHES or JSON_UNESCAPED_UNICODE. So `/` becomes `\/`,
- * every non ASCII character becomes a lowercase `\uXXXX` escape (astral
+ * JSON encoding as the platform's `json` filter does it: `/` becomes
+ * `\/`, every non ASCII character becomes a lowercase `\uXXXX` escape (astral
  * characters as a surrogate pair), and `< > & ' "` become the uppercase
  * `< > & ' "` escapes.
  *
- * PHP has one array type: an empty array or one keyed 0..n-1 encodes as a
- * JSON list, anything else as an object. JavaScript objects with those
- * shapes are encoded the same way so `{{ files|json }}` with no files reads
- * `[]` exactly as it does on the platform.
+ * The platform has one array type: an empty array or one keyed 0..n-1
+ * encodes as a JSON list, anything else as an object. JavaScript objects
+ * with those shapes are encoded the same way so `{{ files|json }}` with
+ * no files reads `[]` exactly as it does on the platform.
  */
 
 const hexTagEscapes = {
@@ -63,8 +61,7 @@ export function encodeString(value) {
 }
 
 /**
- * A number as PHP's json_encode writes it with serialize_precision -1:
- * the shortest round trip form, with a `.0` mantissa in exponent form.
+ * A number as the platform's JSON encoding writes it: the shortest round trip form, with a `.0` mantissa in exponent form.
  *
  * @param {number} value
  * @returns {string|false}
@@ -100,13 +97,13 @@ function isPhpList(value) {
 }
 
 /**
- * Encode a value as PHP's json_encode would, or false where PHP fails
+ * Encode a value as the platform would, or false where the platform fails
  * (non finite numbers), which Twig then prints as an empty string.
  *
  * @param {unknown} value
  * @returns {string|false}
  */
-export function phpJsonEncode(value) {
+export function platformJsonEncode(value) {
     if (value === undefined || value === null) {
         return 'null';
     }
@@ -134,7 +131,7 @@ export function phpJsonEncode(value) {
 
         if (isPhpList(value)) {
             for (const key of keys) {
-                const encoded = phpJsonEncode(value[key]);
+                const encoded = platformJsonEncode(value[key]);
 
                 if (encoded === false) {
                     return false;
@@ -147,7 +144,7 @@ export function phpJsonEncode(value) {
         }
 
         for (const key of keys) {
-            const encoded = phpJsonEncode(value[key]);
+            const encoded = platformJsonEncode(value[key]);
 
             if (encoded === false) {
                 return false;
