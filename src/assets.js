@@ -3,8 +3,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative, sep } from 'node:path';
 
 /**
- * Characters Laravel's Str::ascii (English) transliterates to more than
- * their accent stripped form. Anything else non ASCII that does not
+ * Characters the platform's tag rules (English) transliterate to more
+ * than their accent stripped form. Anything else non ASCII that does not
  * decompose is dropped, as it is there.
  *
  * @type {Record<string, string>}
@@ -16,7 +16,7 @@ const transliterations = {
 };
 
 /**
- * Laravel's Str::slug, which the studio uses for a new upload's default
+ * The platform's slug rules, which the studio uses for a new upload's default
  * tag: transliterate to ASCII, underscores and whitespace become hyphens,
  * `@` becomes `at`, everything other than letters, numbers, and hyphens is
  * removed, and the result is lower case with no leading or trailing hyphen.
@@ -110,7 +110,7 @@ export function kindOf(filename, kindsByExtension) {
 const kindLabels = { image: 'image', audio: 'audio', model: '3D model', library: 'library' };
 
 /**
- * Laravel's Number::fileSize with no decimals, as the upload refusals
+ * The platform's file size format with no decimals, as the upload refusals
  * print limits.
  *
  * @param {number} bytes

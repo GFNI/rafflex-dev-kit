@@ -10,7 +10,7 @@ const libraryBytes = readFileSync(new URL('./fixtures/lib/fake-three.module.js',
 const urlFor = (/** @type {string} */ path) => `/assets/${path}`;
 
 describe('tags', () => {
-    // Expected values are Laravel's Str::slug output for the same stems.
+    // Expected values are the platform's slugs for the same stems.
     for (const [filename, tag] of [
         ['Win Jingle!.mp3', 'win-jingle'],
         ['café_crème (1).png', 'cafe-creme-1'],

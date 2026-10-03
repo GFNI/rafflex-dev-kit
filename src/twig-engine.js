@@ -48,7 +48,7 @@ export class TemplateRenderError extends Error {
 /**
  * A pattern the platform refuses before rendering, matched against the raw
  * template source, with the message the render fails with
- * (TwigRenderer::PreRenderRefusals, published as rules.sandbox.refusals).
+ * (published as rules.sandbox.refusals).
  *
  * @typedef {{pattern: string, flags?: string, message: string}} PreRenderRefusal
  */
@@ -72,9 +72,9 @@ let guard = null;
 
 /**
  * Twig's `default`, except that false is a value rather than empty, as the
- * platform's TwigRenderer overrides it so a toggle's false survives
+ * platform's renderer overrides it so a toggle's false survives
  * `options.show_x|default(true)`. Empty arrays and objects fall through,
- * as PHP's empty arrays do.
+ * as the platform's do.
  *
  * @param {unknown} value
  * @param {unknown[]} [params]
@@ -650,10 +650,10 @@ function lineFromTwigJsMessage(template, message) {
 }
 
 /**
- * Render a template the way the platform's TwigRenderer does: the
+ * Render a template the way the platform's renderer does: the
  * platform's pre render checks, the sandbox whitelist (as a lint over the
- * parsed tokens, since twig.js has no sandbox), autoescaped HTML, PHP
- * printing of scalars, capped collections, and the iteration and time
+ * parsed tokens, since twig.js has no sandbox), autoescaped HTML, the
+ * platform's printing of scalars, capped collections, and the iteration and time
  * guard. Failures throw a TemplateRenderError.
  *
  * @param {string} template

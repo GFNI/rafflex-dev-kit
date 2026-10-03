@@ -4,8 +4,8 @@ import { describe, test } from 'node:test';
 import { compareOutputs, renderFixture } from './helpers/parity.js';
 import { fixtureDocuments } from './helpers/project.js';
 
-// The same templates rendered by the platform's TwigRenderer (recorded in
-// test/fixtures by scripts/generate-test-fixtures.php) and by the kit.
+// The same templates rendered by the platform's renderer (recorded in
+// test/fixtures) and by the kit.
 // `npm run test:parity` runs the marketplace's live suite.
 const { rules, contexts, fixtures } = fixtureDocuments();
 const kitFixtures = JSON.parse(readFileSync(new URL('./fixtures/kit-fixtures.json', import.meta.url), 'utf8')).fixtures;

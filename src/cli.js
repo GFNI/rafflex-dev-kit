@@ -50,8 +50,7 @@ Exit codes: 0 success, 1 a check found blocking problems or a command was refuse
 errors or a command that cannot run.
 
 Environment
-  RAFFLEX_BASE_URL     Marketplace to read rules from (default https://marketplace.rafflex.io)
-  NODE_EXTRA_CA_CERTS  Extra certificate authorities, for a local marketplace or a proxy
+  NODE_EXTRA_CA_CERTS  The certificate authority of a corporate proxy that inspects HTTPS
 
 The kit only downloads the marketplace's public rules and the bundles you import. It never signs in or uploads.
 Docs: https://marketplace.rafflex.io/docs/dev-kit.md`;

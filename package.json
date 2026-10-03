@@ -1,6 +1,6 @@
 {
   "name": "@rafflex/dev",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Build, preview, and check Rafflex marketplace games and blocks locally, with the platform's own rules.",
   "license": "MIT",
   "type": "module",
