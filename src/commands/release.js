@@ -219,7 +219,7 @@ export async function runReleaseCommand(context) {
     const git = commitProduct(workspace.root, marked.directory, `Release ${name} ${product.version}`, tag);
 
     if (product.slug === null) {
-        notes.push('No tag: this product has no slug yet. Read it with get_product and run synced first.');
+        notes.push('No tag: this product has no slug yet. Push it with request_sync and npx @rafflex/dev push first.');
     }
 
     if (git.tag_existed) {

@@ -95,7 +95,7 @@ function branchWarnings(remote, branch) {
         return [];
     }
 
-    return [`The last sync was recorded on the ${syncedOn} branch, but the workspace is on ${branch}. Switch back before pushing, or read the product again with get_product and run synced.`];
+    return [`The last sync was recorded on the ${syncedOn} branch, but the workspace is on ${branch}. Switch back before pushing, or record the product again with request_sync and synced.`];
 }
 
 /**
