@@ -151,6 +151,8 @@ describe('workspace index', () => {
             assert.equal(page.status, 200, path);
             assert.match(page.body, /<title>Rafflex<\/title>/, path);
             assert.ok(page.body.includes(`<meta name="rafflex-token" content="${server.token}">`), path);
+            assert.match(page.body, /<svg class="icon icon-outline"/, path);
+            assert.doesNotMatch(page.body, /<!-- icon:/, path);
             assert.match(String(page.headers['content-security-policy']), /default-src 'self'/, path);
             assert.match(String(page.headers['content-security-policy']), /frame-ancestors 'none'/, path);
         }

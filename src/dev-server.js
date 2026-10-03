@@ -59,6 +59,22 @@ const maxBodyBytes = 16 * 1024;
 /** The app page's own CSP: Alpine evaluates its directives, so it needs eval; nothing else is allowed. */
 const appCsp = `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 
+/** An icon marker in app.html: "<!-- icon:micro/check -->". */
+const iconMarker = /<!-- icon:([a-z]+)\/([a-z0-9-]+) -->/g;
+
+/**
+ * Inlines the bundled Heroicons into the app page in place of their markers,
+ * so icons render offline under the page's CSP. A marker without a bundled
+ * icon is an error, caught by the app's tests.
+ *
+ * @param {string} html
+ */
+export function inlineIcons(html) {
+    return html.replace(iconMarker, (marker, variant, name) => readFileSync(new URL(`icons/${variant}/${name}.svg`, clientDirectory), 'utf8')
+        .trim()
+        .replace('<svg ', `<svg class="icon icon-${variant}" `));
+}
+
 /** Files whose change reloads a product's preview. */
 const previewFiles = [templateFilename, optionsFilename, productFilename];
 
@@ -902,7 +918,7 @@ export async function startDevServer({
         let body = readFileSync(new URL(name, clientDirectory), 'utf8');
 
         if (name === 'app.html') {
-            body = body.replace('__RAFFLEX_TOKEN__', token);
+            body = inlineIcons(body.replace('__RAFFLEX_TOKEN__', token));
         }
 
         send(response, 200, body, {
