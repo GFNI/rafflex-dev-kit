@@ -123,6 +123,6 @@ npm test                 # unit, CLI, server, browser (when Chromium is availabl
 RAFFLEX_BASE_URL=https://marketplace.rafflex.io npm run test:parity
 ```
 
-`scripts/generate-test-fixtures.php` regenerates `test/fixtures` from a marketplace checkout.
+`scripts/generate-test-fixtures.php` regenerates `test/fixtures` from a marketplace checkout. `node scripts/copy-icons.js` copies the Heroicons the app uses into `src/client/icons` (the app is offline, so icons are bundled, never loaded from a CDN).
 
 MIT licensed.
