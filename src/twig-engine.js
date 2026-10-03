@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { formatPlatformDate, unparseableDateMessage } from './platform-date.js';
+import { fixedZone, formatPlatformDate, platformZone, unparseableDateMessage, utcZone } from './platform-date.js';
 import { platformJsonEncode } from './platform-json.js';
 import { lineAt, lintTemplate } from './twig-lint.js';
 
@@ -107,33 +107,57 @@ function defaultKeepingFalse(value, params) {
 }
 
 /**
- * The platform's rounding: half away from zero, after removing the representation
- * error that makes 1.005 * 100 read as 100.49999.
+ * The platform's rounding, half away from zero, step by step as it does
+ * it: scale by 10^precision, take the whole part, and round away from
+ * zero only when the value is at least that whole part plus a half,
+ * scaled back. The comparison is made on the value itself, so 1.005
+ * (stored as 1.00499999999999989) rounds to 1 and 2.01 / 1.2 to 1.67,
+ * exactly as there. A value past the digits a float holds is returned
+ * unchanged. A negative value that rounds to nothing stays negative zero.
  *
  * @param {number} value
  * @param {number} precision
  */
-function platformRound(value, precision) {
-    const factor = 10 ** precision;
-    const scaled = Number((Math.abs(value) * factor).toPrecision(15));
+export function platformRound(value, precision) {
+    if (!Number.isFinite(value) || value === 0) {
+        return value;
+    }
 
-    return Math.sign(value) * Math.round(scaled) / factor;
+    const places = Math.trunc(precision);
+    const exponent = 10 ** Math.abs(places);
+    const scaled = places > 0 ? value * exponent : value / exponent;
+    const unscale = (/** @type {number} */ number) => (places > 0 ? number / exponent : number * exponent);
+    let integral = value >= 0 ? Math.floor(scaled) : Math.ceil(scaled);
+    const next = value >= 0 ? integral + 1 : integral - 1;
+
+    // A scaled value just under a whole number (0.285 * 100 is
+    // 28.499999999999996) is taken as that number when it scales back exactly.
+    if (unscale(next) === value) {
+        integral = next;
+    }
+
+    if (Math.abs(integral) >= 1e16) {
+        return value;
+    }
+
+    const sign = Object.is(integral, -0) || integral < 0 ? -1 : 1;
+    const edge = Math.abs(unscale(integral + sign * 0.5));
+    const rounded = Math.abs(value) >= edge ? integral + sign : integral;
+
+    return unscale(rounded);
 }
 
 /**
  * A non negative number's exact decimal expansion at `decimals` places, as
  * the platform prints a float with that many: every digit of the binary
  * value, rounded half to even at the last place, then zeros. toFixed
- * stops at 100 places and turns to exponents from 1e21; this does neither.
+ * rounds an exact tie up (2178974151611.328125 at 5 places), stops at 100
+ * places, and turns to exponents from 1e21; this does none of those.
  *
  * @param {number} value
  * @param {number} decimals
  */
 export function exactFixed(value, decimals) {
-    if (decimals <= 100 && value < 1e21) {
-        return value.toFixed(decimals);
-    }
-
     const view = new DataView(new ArrayBuffer(8));
 
     view.setFloat64(0, value);
@@ -192,8 +216,7 @@ function numberFormat(value, params = []) {
     const number = Number(value ?? 0);
     const finite = Number.isFinite(number) ? number : 0;
     const roundTo = Number.isFinite(requested) ? requested : 0;
-    const integralAlready = finite === 0 || Math.abs(finite) * 10 ** roundTo >= 2 ** 52;
-    const rounded = integralAlready ? finite : platformRound(finite, roundTo);
+    const rounded = platformRound(finite, roundTo);
     const [whole, fraction] = exactFixed(Math.abs(rounded), decimals).split('.');
     const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, thousandsSeparator);
     const sign = rounded < 0 && /[1-9]/.test(`${whole}${fraction ?? ''}`) ? '-' : '';
@@ -454,8 +477,16 @@ function looseNumber(value) {
  * @param {unknown} value
  * @param {unknown[]} [params]
  */
-function platformRoundFilter(value, params) {
-    return originalRound(looseNumber(value), params);
+function platformRoundFilter(value, params = []) {
+    const method = params[1] === undefined ? 'common' : params[1];
+
+    if (method !== 'common') {
+        return originalRound(looseNumber(value), params);
+    }
+
+    const precision = params[0] === undefined || params[0] === null ? 0 : Math.trunc(looseNumber(params[0]));
+
+    return platformRound(looseNumber(value), precision);
 }
 
 /** @type {((text: string) => number|false)|null} */
@@ -463,29 +494,44 @@ let parseTime = null;
 
 /**
  * Twig's date filter as the platform prints it: every format character
- * in UTC (e prints UTC), and text it cannot read as a time is a render
- * error, as it is there ("23 hours from now" reads as 1970 in twig.js).
+ * in UTC (e prints UTC), or in the zone given as its second argument
+ * (false keeps the date's own zone: +00:00 for a timestamp). Text it
+ * cannot read as a time is a render error, as it is there ("23 hours
+ * from now" reads as 1970 in twig.js).
+ *
+ * The value is read as the platform reads it: nothing, false, and empty
+ * text are now; true is the timestamp 1; whole numbers (and text of
+ * digits, with an optional minus) are timestamps; any other number is
+ * read as the text it prints as (1790000000.5 is a time of day there).
  *
  * @param {unknown} value
  * @param {unknown[]} [params]
  */
 function platformDate(value, params = []) {
     const format = params[0] === undefined || params[0] === null ? 'F j, Y H:i' : String(params[0]);
+    const zoneArgument = params[1];
+    const zone = zoneArgument === undefined || zoneArgument === null || zoneArgument === false ? utcZone : platformZone(zoneArgument);
+    const text = value === true ? '1' : (typeof value === 'number' ? platformNumberToString(value) : String(value ?? ''));
     /** @type {Date} */
     let date;
 
-    if (value === undefined || value === null || value === '') {
-        date = new Date();
-    } else if (value instanceof Date) {
+    if (value instanceof Date) {
         date = value;
-    } else if (typeof value === 'number' || /^\d+$/.test(String(value))) {
-        date = new Date(Number(value) * 1000);
+    } else if (value === undefined || value === null || value === false || text === '') {
+        date = new Date();
+    } else if (/^-?\d+$/.test(text)) {
+        date = new Date(Number(text) * 1000);
+
+        return formatPlatformDate(format, date, zoneArgument === false ? fixedZone(0) : zone);
     } else {
-        const text = String(value);
         const seconds = parseTime === null ? false : parseTime(text);
 
         if (seconds === false || !Number.isFinite(seconds)) {
-            const refusal = unparseableDateMessage(text);
+            // A number is never a word the platform may read as a zone:
+            // printed as text it is a time there, or it fails there too.
+            const refusal = typeof value === 'number'
+                ? `Failed to parse time string (${text}) at position 0 (${text[0]}): Unexpected character`
+                : unparseableDateMessage(text);
 
             if (refusal !== null) {
                 throw new Error(refusal);
@@ -495,7 +541,7 @@ function platformDate(value, params = []) {
         date = new Date((seconds === false || !Number.isFinite(seconds) ? 0 : seconds) * 1000);
     }
 
-    return formatPlatformDate(format, date);
+    return formatPlatformDate(format, date, zone);
 }
 
 /** The operators the platform does arithmetic with. */
@@ -524,12 +570,14 @@ function operandType(value) {
 
 /**
  * An arithmetic operand as the platform reads it: null and false are 0,
- * true is 1, text its leading number. Text with no leading number is
- * refused, as the platform refuses it ("Unsupported operand types:
- * string + int"). Anything else (a list, a mapping) is left to twig.js.
+ * true is 1, text that is a number its value. Text with a number and
+ * more after it ("5 apples", "1,000") fails there ("A non-numeric value
+ * encountered"); other text, a list or mapping, and captured text
+ * ({% set %} ... {% endset %}) are refused ("Unsupported operand types").
+ * A list beside a list is left to twig.js.
  *
  * @param {unknown} value
- * @returns {{number: number}|{refused: true}|null}
+ * @returns {{number: number}|{refused: string}|{nonNumeric: true}|null}
  */
 function arithmeticOperand(value) {
     if (value === null || value === undefined || typeof value === 'boolean') {
@@ -540,11 +588,167 @@ function arithmeticOperand(value) {
         return { number: value };
     }
 
+    if (value instanceof String && /** @type {any} */ (value).twigMarkup === true) {
+        return { refused: 'markup' };
+    }
+
     if (typeof value === 'string' || value instanceof String) {
         const text = String(value);
-        const number = /^\s*[+-]?(?:\d|\.\d)/.test(text) ? parseFloat(text) : Number.NaN;
 
-        return Number.isNaN(number) ? { refused: true } : { number };
+        if (numericText.test(text)) {
+            return { number: Number(text) };
+        }
+
+        return /^[ \t\n\r\v\f]*[+-]?(?:\d|\.\d)/.test(text) ? { nonNumeric: true } : { refused: 'string' };
+    }
+
+    if (Array.isArray(value) || (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype)) {
+        return { refused: 'array' };
+    }
+
+    return null;
+}
+
+/** The comparison operators the platform compares loosely, as its language does. */
+const comparisonOperators = ['==', '!=', '<', '>', '<=', '>=', '<=>'];
+
+/**
+ * Whether a value is one the platform compares as a scalar: nothing, a
+ * boolean, a number, or text (captured text included).
+ *
+ * @param {unknown} value
+ * @returns {value is null|undefined|boolean|number|string|String}
+ */
+function isScalar(value) {
+    return value === null || value === undefined || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string' || value instanceof String;
+}
+
+/** Text the platform reads as a number when comparing: surrounding whitespace allowed, nothing else. */
+const numericText = /^[ \t\n\r\v\f]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?[ \t\n\r\v\f]*$/;
+
+/**
+ * A scalar as the platform reads it for true or false.
+ *
+ * @param {null|undefined|boolean|number|string|String} value
+ */
+function scalarTruth(value) {
+    if (value === null || value === undefined) {
+        return false;
+    }
+
+    if (typeof value === 'boolean' || typeof value === 'number') {
+        return Boolean(value);
+    }
+
+    const text = String(value);
+
+    return text !== '' && text !== '0';
+}
+
+/**
+ * @param {number} left
+ * @param {number} right
+ */
+function numberOrder(left, right) {
+    return left === right ? 0 : (left < right ? -1 : 1);
+}
+
+/**
+ * Text compared byte by byte, as the platform compares it.
+ *
+ * @param {string} left
+ * @param {string} right
+ */
+function textOrder(left, right) {
+    return Math.sign(Buffer.compare(Buffer.from(left), Buffer.from(right)));
+}
+
+/**
+ * Two scalars ordered as the platform's language orders them (its loose
+ * comparison): nothing beside text is empty text; nothing or a boolean
+ * beside anything else compares as true or false; a number beside text
+ * that reads as a number compares as numbers, else as text; two texts
+ * that both read as numbers compare as numbers, else byte by byte. So an
+ * unset option equals 0 and is below 1, and 0 does not equal ''.
+ *
+ * @param {null|undefined|boolean|number|string|String} left
+ * @param {null|undefined|boolean|number|string|String} right
+ * @returns {number} -1, 0, or 1.
+ */
+export function platformCompare(left, right) {
+    const leftText = typeof left === 'string' || left instanceof String ? String(left) : null;
+    const rightText = typeof right === 'string' || right instanceof String ? String(right) : null;
+
+    if ((left === null || left === undefined) && rightText !== null) {
+        return textOrder('', rightText);
+    }
+
+    if ((right === null || right === undefined) && leftText !== null) {
+        return textOrder(leftText, '');
+    }
+
+    if (left === null || left === undefined || right === null || right === undefined || typeof left === 'boolean' || typeof right === 'boolean') {
+        return numberOrder(Number(scalarTruth(left)), Number(scalarTruth(right)));
+    }
+
+    if (leftText !== null && rightText !== null) {
+        return numericText.test(leftText) && numericText.test(rightText) ? numberOrder(Number(leftText), Number(rightText)) : textOrder(leftText, rightText);
+    }
+
+    if (leftText !== null) {
+        return numericText.test(leftText) ? numberOrder(Number(leftText), Number(right)) : textOrder(leftText, platformNumberToString(Number(right)));
+    }
+
+    if (rightText !== null) {
+        return numericText.test(rightText) ? numberOrder(Number(left), Number(rightText)) : textOrder(platformNumberToString(Number(left)), rightText);
+    }
+
+    return numberOrder(Number(left), Number(right));
+}
+
+/**
+ * The result of a comparison operator between two scalars.
+ *
+ * @param {string} operator
+ * @param {number} order
+ */
+function comparisonResult(operator, order) {
+    switch (operator) {
+        case '==': return order === 0;
+        case '!=': return order !== 0;
+        case '<': return order < 0;
+        case '>': return order > 0;
+        case '<=': return order <= 0;
+        case '>=': return order >= 0;
+        default: return order;
+    }
+}
+
+/**
+ * The platform's `in` for a scalar: in text, whether the text holds it
+ * (any text holds ''; nothing and booleans are never in text); in a list
+ * or mapping, whether an item compares equal to it loosely. Null when
+ * twig.js decides (anything else).
+ *
+ * @param {unknown} value
+ * @param {unknown} haystack
+ * @returns {boolean|null}
+ */
+function platformContains(value, haystack) {
+    if (!isScalar(value)) {
+        return null;
+    }
+
+    if (typeof haystack === 'string' || haystack instanceof String) {
+        if (typeof value === 'string' || value instanceof String) {
+            return String(value) === '' || String(haystack).includes(String(value));
+        }
+
+        return typeof value === 'number' ? String(haystack).includes(platformNumberToString(value)) : false;
+    }
+
+    if (Array.isArray(haystack) || (haystack !== null && typeof haystack === 'object' && Object.getPrototypeOf(haystack) === Object.prototype)) {
+        return Object.values(/** @type {object} */ (haystack)).some((item) => isScalar(item) && platformCompare(value, item) === 0);
     }
 
     return null;
@@ -694,6 +898,26 @@ Twig.extend((internal) => {
     const originalOperatorParse = internal.expression.operator.parse;
 
     internal.expression.operator.parse = function platformOperatorParse(operator, stack) {
+        if (stack.length >= 2 && comparisonOperators.includes(operator) && isScalar(stack[stack.length - 1]) && isScalar(stack[stack.length - 2])) {
+            const right = stack.pop();
+            const left = stack.pop();
+
+            stack.push(comparisonResult(operator, platformCompare(left, right)));
+
+            return stack;
+        }
+
+        if (stack.length >= 2 && (operator === 'in' || operator === 'not in')) {
+            const contained = platformContains(stack[stack.length - 2], stack[stack.length - 1]);
+
+            if (contained !== null) {
+                stack.splice(stack.length - 2, 2);
+                stack.push(operator === 'in' ? contained : !contained);
+
+                return stack;
+            }
+        }
+
         if (!arithmeticOperators.includes(operator) || stack.length < 2) {
             return originalOperatorParse.call(this, operator, stack);
         }
@@ -703,12 +927,21 @@ Twig.extend((internal) => {
         const first = arithmeticOperand(left);
         const second = arithmeticOperand(right);
 
-        if (first === null || second === null) {
+        if (first === null || second === null || ('refused' in first && first.refused === 'array' && 'refused' in second && second.refused === 'array')) {
             return originalOperatorParse.call(this, operator, stack);
         }
 
-        if ('refused' in first || 'refused' in second) {
-            throw new Error(`Unsupported operand types: ${operandType(left)} ${operator} ${operandType(right)}`);
+        // The left operand is read first: its failure is the one reported.
+        for (const operand of [first, second]) {
+            if ('refused' in operand) {
+                const typeOf = (/** @type {unknown} */ value, /** @type {typeof first} */ read) => ('refused' in read ? read.refused : operandType(value));
+
+                throw new Error(`Unsupported operand types: ${typeOf(left, first)} ${operator} ${typeOf(right, second)}`);
+            }
+
+            if ('nonNumeric' in operand) {
+                throw new Error('A non-numeric value encountered');
+            }
         }
 
         if ((operator === '/' || operator === '//') && second.number === 0) {

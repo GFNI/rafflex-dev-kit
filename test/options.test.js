@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { startDevServer } from '../src/dev-server.js';
 import { imageDimensions, placeholderPng, placeholderShape, withBuyerImages } from '../src/options/buyer-images.js';
-import { optionIssues, sampleValueSets } from '../src/options/check.js';
+import { dateGuardPattern, optionIssues, sampleValueSets } from '../src/options/check.js';
 import { inferOptions } from '../src/options/infer.js';
 import { normaliseOverrides, overrideProblems } from '../src/options/overrides.js';
 import { tokenizeTemplate, TemplateTokenError } from '../src/options/twig-tokens.js';
@@ -235,6 +235,21 @@ describe('option checks', () => {
         assert.match(issues[0].message, /Failed to parse time string \(A much longer value/);
     });
 
+    test('the date failure says how to guard the option, and the guarded template passes', () => {
+        const [issue] = optionIssues({ template: "<p>{{ options.ends|date('j M') }}</p>", files: {}, overrides: null, documents, playCount: 5, scenarios });
+
+        assert.equal(issue.code, 'option_render_error');
+        assert.ok(issue.message.endsWith(`A buyer can type anything into options.ends, and text that is not a date fails the page on the marketplace too. Print the date only when the text is one: {% if options.ends matches "${dateGuardPattern}" %}{{ options.ends|date('j M') }}{% endif %}`), issue.message);
+
+        const guarded = `<p>{% if options.ends matches "${dateGuardPattern}" %}{{ options.ends|date('j M') }}{% endif %}</p>`;
+
+        assert.deepEqual(optionIssues({ template: guarded, files: {}, overrides: null, documents, playCount: 5, scenarios }), []);
+    });
+
+    test('a toggle piped to date renders, as it does on the marketplace', () => {
+        assert.deepEqual(optionIssues({ template: "<p>{{ options.show_date|default(true) ? 'x' : '' }}{{ options.show_date|date('Y') }}</p>", files: {}, overrides: null, documents, playCount: 5, scenarios }), []);
+    });
+
     test('values that only stretch the preview renderer do not block', () => {
         for (const template of [
             '<p>{{ 3.14159|number_format(options.decimals|default(2)) }}</p>',
@@ -246,7 +261,7 @@ describe('option checks', () => {
     });
 
     test('a failure the preview cannot match to the marketplace is a warning, not a block', () => {
-        const issues = optionIssues({ template: '<p>{{ 3.5|round(options.rounding) }}</p>', files: {}, overrides: null, documents, playCount: 5, scenarios });
+        const issues = optionIssues({ template: '<p>{{ 3.5|round(1, options.method) }}</p>', files: {}, overrides: null, documents, playCount: 5, scenarios });
 
         assert.deepEqual(issues.map((issue) => issue.code), ['option_warning']);
         assert.match(issues[0].message, /the preview renderer could not render the template \(.+\)\. This may be a limit of the preview rather than of the template; the marketplace's check is the final verdict\.$/);

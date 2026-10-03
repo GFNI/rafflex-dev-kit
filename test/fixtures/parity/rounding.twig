@@ -1,0 +1,4 @@
+<p>{% for price in [2.01, 2.07, 4.77, 8.79, 9.03, 16.83, 17.31, 18.33, 18.81] %}{{ (price / 1.2)|number_format(2) }} {% endfor %}</p>
+<p>{% for count in [11, 15, 27, 31, 37, 45, 53, 61, 81, 83, 97, 99] %}{{ (count * 0.015)|round(2) }} {% endfor %}</p>
+<p>{{ 1.005|round(2) }} {{ 1.005|number_format(2) }} {{ 0.285|round(2) }} {{ (-1.005)|round(2) }} {{ 2.5|round }} {{ (-2.5)|round }} {{ 1234.5|round(-1) }} {{ 1250|round(-2) }} {{ 1.45|round(1, 'floor') }} {{ 1.45|round(1, 'ceil') }}</p>
+<p>{{ 61182827949523.925|number_format(2) }} {{ 2178974151611.328125|number_format(5) }} {{ 38090991973.87695|round(5) }} {{ 1234.5|number_format(-2) }}</p>

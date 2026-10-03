@@ -167,7 +167,8 @@ describe('platform failures the preview reproduces', () => {
         assert.equal(failure("{{ '' + 1 }}"), 'Unsupported operand types: string + int');
         assert.equal(failure("{{ 1 + 'abc' }}"), 'Unsupported operand types: int + string');
         assert.equal(failure("{{ 'abc' * 2 }}"), 'Unsupported operand types: string * int');
-        assert.equal(failure("{{ '5 apples' + 1 }}"), null);
+        assert.equal(failure("{{ '5 apples' + 1 }}"), 'A non-numeric value encountered');
+        assert.equal(failure("{{ ' 5' + 1 }}"), null);
     });
 
     test('date fails on text the platform cannot read as a time, and reads what it can', () => {

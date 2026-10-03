@@ -34,6 +34,8 @@ export const platformFailurePatterns = Object.freeze([
     /^Division by zero\b/,
     /^Modulo by zero\b/,
     /^Unsupported operand types\b/,
+    /^A non-numeric value encountered\b/,
+    /^Unknown or bad timezone\b/,
     /^Failed to parse time string\b/,
     /^Array to string conversion\b/,
     /\bis not allowed\b/,
@@ -41,6 +43,30 @@ export const platformFailurePatterns = Object.freeze([
     /^Too many nested for loops\b/,
     /^Template rendering exceeded\b/,
 ]);
+
+/**
+ * A pattern for a date and an optional time (2026-12-24, 2026-12-24
+ * 20:00) that the platform always reads: checked with `matches` (the
+ * sandbox allows it), text a buyer types that is not a date prints
+ * nothing instead of failing the page. A month or day out of range
+ * ("2026-13-45") fails there, so the pattern holds them to range.
+ */
+export const dateGuardPattern = '/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])( ([01][0-9]|2[0-3]):[0-5][0-9])?$/';
+
+/**
+ * How to make a template safe when a text option is piped into date: a
+ * buyer can type anything, so print the date only when the text is one.
+ * Uses the template's own expression when it can find it.
+ *
+ * @param {string} template
+ */
+export function dateGuardAdvice(template) {
+    const found = template.match(/options\.([A-Za-z_]\w*)(?:\s*\|\s*\w+(?:\([^()]*\))?)*?\s*\|\s*date\b(?:\([^()]*\))?/);
+    const key = found?.[1] ?? 'your_option';
+    const expression = found?.[0] ?? `options.${key}|date('j M')`;
+
+    return ` A buyer can type anything into options.${key}, and text that is not a date fails the page on the marketplace too. Print the date only when the text is one: {% if options.${key} matches "${dateGuardPattern}" %}{{ ${expression} }}{% endif %}`;
+}
 
 /**
  * The sample for a number option: a large everyday value (a price, a
@@ -259,7 +285,9 @@ export function optionIssues({ template, files, overrides, overridesError = null
                 const which = valueSets.length > 1 ? ` (value set ${round + 1} of ${valueSets.length})` : '';
 
                 if (platformFailurePatterns.some((pattern) => pattern.test(message))) {
-                    issues.push(optionIssue('option_render_error', `With every option set as a buyer may set it${which}: ${message}`, rules, { scenario }));
+                    const advice = /^Failed to parse time string\b/.test(message) ? dateGuardAdvice(template) : '';
+
+                    issues.push(optionIssue('option_render_error', `With every option set as a buyer may set it${which}: ${message}${advice}`, rules, { scenario }));
                     continue;
                 }
 
