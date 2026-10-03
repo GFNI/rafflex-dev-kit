@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { createProduct, isInside, openFolder, testRunner } from './app/actions.js';
-import { detectClients } from './app/clients.js';
+import { detectClients, detectOpeners } from './app/clients.js';
 import { productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
 import { promptSource } from './app/prompts.js';
 import { imageExtensions, readLastResult, resultsDirectoryName } from './app/results.js';
@@ -42,7 +42,7 @@ const contentTypes = {
 };
 
 /** The client files served from /__rafflex/. */
-const clientFiles = ['app.js', 'app.css'];
+const clientFiles = ['app.js', 'app.css', 'openers.js'];
 
 /** The app's pages: each serves the single page app, which routes on the path. */
 const appPages = ['/', '/products', '/new'];
@@ -412,6 +412,7 @@ export async function startDevServer({
     token = randomBytes(24).toString('hex'),
     prompts = promptSource({ workspaceDirectory: workspace.root, baseUrl: loaded.baseUrl }),
     detect = () => detectClients(),
+    detectReadyOpeners = (/** @type {any[]} */ openers) => detectOpeners(openers),
     tests = {},
     openFolderImpl = (directory) => openFolder(directory),
 }) {
@@ -708,7 +709,9 @@ export async function startDevServer({
 
     /**
      * Home: the Get started prompt, the AI apps on this computer with
-     * their connect commands, and the health strip.
+     * their connect commands, the apps a prompt can open in (with the
+     * workspace and platform the page builds their links and commands
+     * for), and the health strip.
      *
      * @param {URL} url
      * @param {import('node:http').ServerResponse} response
@@ -741,6 +744,8 @@ export async function startDevServer({
                 ai_start: document?.prompts?.new_product_ai_start?.text ?? null,
             },
             clients,
+            openers: detectReadyOpeners(Array.isArray(document?.openers) ? document.openers : []),
+            platform: process.platform,
             links: document?.links ?? {},
             prompts_error: error,
             health,

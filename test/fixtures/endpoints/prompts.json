@@ -1,5 +1,5 @@
 {
-    "version": "ed9d2b7ecab7",
+    "version": "7e2698cfafb0",
     "placeholders": [
         "title",
         "path",
@@ -101,6 +101,44 @@
             "label": "VS Code",
             "kind": "link",
             "connect": "vscode:mcp/install?%7B%22name%22%3A%22rafflex%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmarketplace.rafflex.io%2Fmcp%22%7D"
+        }
+    ],
+    "openers": [
+        {
+            "key": "claude-code",
+            "label": "Claude Code",
+            "url": "claude-cli://open",
+            "prompt_param": "q",
+            "path_param": "cwd",
+            "max_prompt": 5000,
+            "command": "claude"
+        },
+        {
+            "key": "claude-code-vscode",
+            "label": "Claude Code in VS Code",
+            "url": "vscode://anthropic.claude-code/open",
+            "prompt_param": "prompt",
+            "path_param": null,
+            "max_prompt": 5000,
+            "command": null
+        },
+        {
+            "key": "codex",
+            "label": "Codex",
+            "url": "codex://new",
+            "prompt_param": "prompt",
+            "path_param": "path",
+            "max_prompt": 5000,
+            "command": "codex"
+        },
+        {
+            "key": "cursor",
+            "label": "Cursor",
+            "url": "cursor://anysphere.cursor-deeplink/prompt",
+            "prompt_param": "text",
+            "path_param": null,
+            "max_prompt": 3000,
+            "command": null
         }
     ],
     "links": {
