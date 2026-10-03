@@ -15,7 +15,8 @@ export const promptPlaceholders = ['title', 'path', 'slug', 'type', 'version', '
 /**
  * @typedef {{title: string, description: string, text: string}} PromptEntry
  * @typedef {{key: string, label: string, kind: string, connect: string}} PromptClient
- * @typedef {{version?: string, prompts: Record<string, PromptEntry>, clients: PromptClient[], links: Record<string, string>}} PromptsDocument
+ * @typedef {{key: string, label: string, url: string, prompt_param: string, path_param?: string|null, max_prompt?: number|null, command?: string|null}} PromptOpener
+ * @typedef {{version?: string, prompts: Record<string, PromptEntry>, clients: PromptClient[], openers: PromptOpener[], links: Record<string, string>}} PromptsDocument
  */
 
 /**
@@ -66,6 +67,7 @@ function validPrompts(document) {
         version: candidate.version,
         prompts: candidate.prompts,
         clients: Array.isArray(candidate.clients) ? candidate.clients : [],
+        openers: Array.isArray(candidate.openers) ? candidate.openers : [],
         links: typeof candidate.links === 'object' && candidate.links !== null ? candidate.links : {},
     };
 }

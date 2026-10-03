@@ -6,6 +6,7 @@
     <meta name="rafflex-token" content="__RAFFLEX_TOKEN__">
     <title>Rafflex</title>
     <link rel="stylesheet" href="/__rafflex/app.css">
+    <script type="module" src="/__rafflex/openers.js"></script>
     <script src="/__rafflex/app.js" defer></script>
     <script src="/__rafflex/alpine.js" defer></script>
 </head>
@@ -32,7 +33,24 @@
                 <div class="stack">
                     <div class="prompt">
                         <pre x-text="home.get_started.text"></pre>
-                        <button type="button" class="button primary small" @click="copy(home.get_started.text, 'get_started')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'get_started' ? 'Copied' : 'Copy'"></span></button>
+                        <div class="row wrap" data-prompt-actions>
+                            <template x-if="promptActions(home.get_started.text).open">
+                                <a class="button primary small" :href="promptActions(home.get_started.text).open.href" x-text="promptActions(home.get_started.text).open.label"></a>
+                            </template>
+                            <button type="button" class="button small" :class="{ primary: !promptActions(home.get_started.text).open }" @click="copy(home.get_started.text, 'get_started')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'get_started' ? 'Copied' : 'Copy'"></span></button>
+                            <details class="menu" x-show="promptActions(home.get_started.text).menu.length > 0" @click.outside="$el.open = false">
+                                <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                                <div class="menu-items">
+                                    <template x-for="item in promptActions(home.get_started.text).menu" :key="item.key">
+                                        <div class="menu-item">
+                                            <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                            <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${'get_started'}-${item.key}`)" x-text="item.label"></button></template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </details>
+                            <span class="muted small" x-show="String(copied ?? '').startsWith(`${'get_started'}-`)">Copied</span>
+                        </div>
                     </div>
                     <p class="muted" x-text="home.get_started.description"></p>
                 </div>
@@ -184,7 +202,24 @@
                     <h2>Now tell your AI what to build</h2>
                     <div class="prompt">
                         <pre x-text="newProductPrompt"></pre>
-                        <button type="button" class="button small" @click="copy(newProductPrompt, 'created')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'created' ? 'Copied' : 'Copy'"></span></button>
+                        <div class="row wrap" data-prompt-actions>
+                            <template x-if="promptActions(newProductPrompt).open">
+                                <a class="button small" :href="promptActions(newProductPrompt).open.href" x-text="promptActions(newProductPrompt).open.label"></a>
+                            </template>
+                            <button type="button" class="button small" :class="{ ghost: promptActions(newProductPrompt).open }" @click="copy(newProductPrompt, 'created')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'created' ? 'Copied' : 'Copy'"></span></button>
+                            <details class="menu" x-show="promptActions(newProductPrompt).menu.length > 0" @click.outside="$el.open = false">
+                                <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                                <div class="menu-items">
+                                    <template x-for="item in promptActions(newProductPrompt).menu" :key="item.key">
+                                        <div class="menu-item">
+                                            <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                            <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${'created'}-${item.key}`)" x-text="item.label"></button></template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </details>
+                            <span class="muted small" x-show="String(copied ?? '').startsWith(`${'created'}-`)">Copied</span>
+                        </div>
                     </div>
                     <p class="muted small">Replace the part in brackets, then paste it into your AI.</p>
                 </section>
@@ -258,7 +293,24 @@
                                         <span class="muted small" x-text="issueWhere(issue)"></span>
                                         <span class="small" x-show="issue.fix" x-text="issue.fix"></span>
                                         <div class="row">
-                                            <button type="button" class="button small" @click="copy(product.prompts.fix_issue[index] ?? '', `fix-${index}`)" :disabled="!product.prompts.fix_issue[index]" x-text="copied === `fix-${index}` ? 'Copied' : 'Ask your AI to fix this'"></button>
+                                            <div class="row wrap" data-prompt-actions>
+                                                <template x-if="promptActions(product.prompts.fix_issue[index] ?? '').open">
+                                                    <a class="button small" :href="promptActions(product.prompts.fix_issue[index] ?? '').open.href" x-text="promptActions(product.prompts.fix_issue[index] ?? '').open.label"></a>
+                                                </template>
+                                                <button type="button" class="button small" :class="{ ghost: promptActions(product.prompts.fix_issue[index] ?? '').open }" @click="copy(product.prompts.fix_issue[index] ?? '', `fix-${index}`)"><!-- icon:micro/clipboard-document --><span x-text="copied === `fix-${index}` ? 'Copied' : 'Copy fix prompt'"></span></button>
+                                                <details class="menu" x-show="promptActions(product.prompts.fix_issue[index] ?? '').menu.length > 0" @click.outside="$el.open = false">
+                                                    <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                                                    <div class="menu-items">
+                                                        <template x-for="item in promptActions(product.prompts.fix_issue[index] ?? '').menu" :key="item.key">
+                                                            <div class="menu-item">
+                                                                <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                                                <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${`fix-${index}`}-${item.key}`)" x-text="item.label"></button></template>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </details>
+                                                <span class="muted small" x-show="String(copied ?? '').startsWith(`${`fix-${index}`}-`)">Copied</span>
+                                            </div>
                                         </div>
                                     </li>
                                 </template>
@@ -330,7 +382,24 @@
                         <template x-if="product.publish.prompt">
                             <div class="prompt">
                                 <pre x-text="product.publish.prompt.text"></pre>
-                                <button type="button" class="button small" @click="copy(product.publish.prompt.text, 'publish')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'publish' ? 'Copied' : product.publish.disabled ? 'Copy fix prompt' : 'Copy'"></span></button>
+                                <div class="row wrap" data-prompt-actions>
+                                    <template x-if="promptActions(product.publish.prompt.text).open">
+                                        <a class="button small" :href="promptActions(product.publish.prompt.text).open.href" x-text="promptActions(product.publish.prompt.text).open.label"></a>
+                                    </template>
+                                    <button type="button" class="button small" :class="{ ghost: promptActions(product.publish.prompt.text).open }" @click="copy(product.publish.prompt.text, 'publish')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'publish' ? 'Copied' : (product.publish.disabled ? 'Copy fix prompt' : 'Copy')"></span></button>
+                                    <details class="menu" x-show="promptActions(product.publish.prompt.text).menu.length > 0" @click.outside="$el.open = false">
+                                        <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                                        <div class="menu-items">
+                                            <template x-for="item in promptActions(product.publish.prompt.text).menu" :key="item.key">
+                                                <div class="menu-item">
+                                                    <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                                    <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${'publish'}-${item.key}`)" x-text="item.label"></button></template>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </details>
+                                    <span class="muted small" x-show="String(copied ?? '').startsWith(`${'publish'}-`)">Copied</span>
+                                </div>
                             </div>
                         </template>
                         <p class="muted small">Your AI pushes and submits through your account. Nothing goes live until our team approves it.</p>
@@ -346,7 +415,24 @@
                             <span class="muted small" x-text="prompt.description"></span>
                             <div class="prompt">
                                 <pre x-text="prompt.text"></pre>
-                                <button type="button" class="button small" @click="copy(prompt.text, `prompt-${prompt.key}`)"><!-- icon:micro/clipboard-document --><span x-text="copied === `prompt-${prompt.key}` ? 'Copied' : 'Copy'"></span></button>
+                                <div class="row wrap" data-prompt-actions>
+                                    <template x-if="promptActions(prompt.text).open">
+                                        <a class="button small" :href="promptActions(prompt.text).open.href" x-text="promptActions(prompt.text).open.label"></a>
+                                    </template>
+                                    <button type="button" class="button small" :class="{ ghost: promptActions(prompt.text).open }" @click="copy(prompt.text, `prompt-${prompt.key}`)"><!-- icon:micro/clipboard-document --><span x-text="copied === `prompt-${prompt.key}` ? 'Copied' : 'Copy'"></span></button>
+                                    <details class="menu" x-show="promptActions(prompt.text).menu.length > 0" @click.outside="$el.open = false">
+                                        <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                                        <div class="menu-items">
+                                            <template x-for="item in promptActions(prompt.text).menu" :key="item.key">
+                                                <div class="menu-item">
+                                                    <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                                    <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${`prompt-${prompt.key}`}-${item.key}`)" x-text="item.label"></button></template>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </details>
+                                    <span class="muted small" x-show="String(copied ?? '').startsWith(`${`prompt-${prompt.key}`}-`)">Copied</span>
+                                </div>
                             </div>
                         </div>
                     </template>
@@ -387,7 +473,24 @@
             <h2>Or ask your AI to start it for you</h2>
             <div class="prompt">
                 <pre x-text="aiStartPrompt"></pre>
-                <button type="button" class="button small" @click="copy(aiStartPrompt, 'ai-start')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'ai-start' ? 'Copied' : 'Copy'"></span></button>
+                <div class="row wrap" data-prompt-actions>
+                    <template x-if="promptActions(aiStartPrompt).open">
+                        <a class="button small" :href="promptActions(aiStartPrompt).open.href" x-text="promptActions(aiStartPrompt).open.label"></a>
+                    </template>
+                    <button type="button" class="button small" :class="{ ghost: promptActions(aiStartPrompt).open }" @click="copy(aiStartPrompt, 'ai-start')"><!-- icon:micro/clipboard-document --><span x-text="copied === 'ai-start' ? 'Copied' : 'Copy'"></span></button>
+                    <details class="menu" x-show="promptActions(aiStartPrompt).menu.length > 0" @click.outside="$el.open = false">
+                        <summary class="button ghost icon-only small" aria-label="Other ways to give this to your AI"><!-- icon:micro/ellipsis-horizontal --></summary>
+                        <div class="menu-items">
+                            <template x-for="item in promptActions(aiStartPrompt).menu" :key="item.key">
+                                <div class="menu-item">
+                                    <template x-if="item.kind === 'link'"><a :href="item.href" x-text="item.label" @click="$el.closest('details').open = false"></a></template>
+                                    <template x-if="item.kind === 'copy'"><button type="button" @click="$el.closest('details').open = false; copy(item.text, `${'ai-start'}-${item.key}`)" x-text="item.label"></button></template>
+                                </div>
+                            </template>
+                        </div>
+                    </details>
+                    <span class="muted small" x-show="String(copied ?? '').startsWith(`${'ai-start'}-`)">Copied</span>
+                </div>
             </div>
         </section>
     </main>

@@ -417,6 +417,18 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        // Every way to hand a prompt to the creator's AI (openers.js): the
+        // first ready app as a link, the rest in the menu beside Copy.
+        promptActions(text) {
+            const build = window.rafflexOpeners?.promptActions;
+
+            if (typeof build !== 'function' || !text) {
+                return { open: null, menu: [] };
+            }
+
+            return build(this.home?.openers ?? [], text, { path: this.home?.workspace ?? null, platform: this.home?.platform ?? 'darwin' });
+        },
+
         async copy(text, key) {
             try {
                 await navigator.clipboard.writeText(text);

@@ -225,6 +225,7 @@ describe('prompts from the marketplace', () => {
 
         assert.equal(first.error, null);
         assert.match(first.document?.prompts.iterate.text ?? '', /^Change \{title\}/);
+        assert.deepEqual(first.document?.openers.map((opener) => opener.key), ['claude-code', 'claude-code-vscode', 'codex', 'cursor']);
 
         fixtures.changeDocument('prompts', (document) => ({ ...document, version: 'changed000001', prompts: { ...document.prompts, iterate: { ...document.prompts.iterate, text: 'Now change {title}.' } } }));
 

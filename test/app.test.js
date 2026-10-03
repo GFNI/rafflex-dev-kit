@@ -154,6 +154,7 @@ describe('the app on localhost', () => {
             watchFiles: false,
             prompts: stubPrompts(),
             detect: () => ['claude-code'],
+            detectReadyOpeners: (/** @type {any[]} */ openers) => openers.map((opener) => ({ ...opener, link_ready: opener.key === 'claude-code', command_ready: opener.key === 'claude-code' })),
             tests: { command: 'check', env: { ...process.env, RAFFLEX_BASE_URL: fixtures.baseUrl } },
             openFolderImpl: (directory) => {
                 opened.push(directory);
@@ -235,6 +236,29 @@ describe('the app on localhost', () => {
         assert.equal(image.headers['content-type'], 'image/png');
         assert.equal(image.body, 'png bytes');
         assert.equal((await send(`${server.url}p/blocks/winner-wall/results/run.json`)).status, 404);
+    });
+
+    test('Home lists the apps a prompt opens in, marked ready on this computer, with the platform the page builds commands for', async () => {
+        const home = (await send(`${server.url}__rafflex/home`)).json();
+
+        assert.deepEqual(home.openers.map((/** @type {any} */ opener) => [opener.key, opener.link_ready, opener.command_ready]), [
+            ['claude-code', true, true],
+            ['claude-code-vscode', false, false],
+            ['codex', false, false],
+            ['cursor', false, false],
+        ]);
+        assert.equal(home.openers[0].url, 'claude-cli://open');
+        assert.equal(home.platform, process.platform);
+    });
+
+    test('the page loads the prompt opener module from the kit itself', async () => {
+        const page = await send(server.url);
+        const module = await send(`${server.url}__rafflex/openers.js`);
+
+        assert.match(page.body, /<script type="module" src="\/__rafflex\/openers\.js"><\/script>/);
+        assert.equal(module.status, 200);
+        assert.match(module.headers['content-type'] ?? '', /javascript/);
+        assert.match(module.body, /export function promptActions/);
     });
 
     test('Home shows the Get started prompt, the AI apps on this computer, and the health strip', async () => {
