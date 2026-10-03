@@ -437,6 +437,7 @@ export function remoteFromProduct(product, now = new Date()) {
                 kind: String(entry.kind ?? ''),
                 library: typeof entry.library?.name === 'string' ? entry.library.name : (typeof entry.library === 'string' ? entry.library : null),
                 ...(typeof entry.locked === 'boolean' ? { locked: entry.locked } : {}),
+                ...(Number.isInteger(entry.size_bytes) ? { size_bytes: entry.size_bytes } : {}),
             })),
         live: draft !== null || released === null ? null : {
             version: released.version,

@@ -22,8 +22,11 @@ import { compareWithRemote, readLocalState } from './sync-state.js';
  *   or two approved library files would take the same tag. Two files that
  *   only share a stem (images/win.png and sounds/win.mp3) are fine: the
  *   second takes the tag win-2, in the preview and on the marketplace.
- * - `asset_capacity`: the media in assets/ is over the per product
- *   library capacity. Approved libraries take no space.
+ * - `asset_capacity`: the media in assets/, plus files still on the
+ *   marketplace that assets/ no longer holds (a push never deletes them),
+ *   is over the per product library capacity. Approved libraries take no
+ *   space. A marketplace file counts only when the recorded state has its
+ *   size (`size_bytes`, recorded since this kit version).
  * - `asset_content_mismatch`: a file the push uploads holds content the
  *   marketplace refuses for its extension (text named .png, AAC named
  *   .mp3). Another image type under an image extension is fine: the
@@ -98,12 +101,19 @@ export function mediaIssues(product, documents, local = readLocalState(product, 
     issues.push(...duplicateIssues(local.assets, issue));
 
     const capacity = uploadRules.library_capacity_bytes;
-    const used = local.assets.filter((asset) => asset.library === null).reduce((total, asset) => total + asset.size, 0);
+    const localBytes = local.assets.filter((asset) => asset.library === null).reduce((total, asset) => total + asset.size, 0);
+    const remoteMedia = Array.isArray(product.manifest.remote?.media) ? product.manifest.remote.media : [];
+    const stillThere = changes.assets.removed
+        .map((removed) => remoteMedia.find((entry) => entry.tag === removed.tag))
+        .filter((entry) => entry !== undefined && (entry.library === null || entry.library === undefined) && entry.kind !== 'library');
+    const remoteBytes = stillThere.reduce((total, entry) => total + (Number.isInteger(entry?.size_bytes) ? Number(entry?.size_bytes) : 0), 0);
+    const used = localBytes + remoteBytes;
 
     if (typeof capacity === 'number' && used > capacity) {
         const full = typeof refusals.over_capacity === 'string' ? `${refusals.over_capacity} ` : '';
+        const kept = remoteBytes === 0 ? '' : ` (${fileSize(remoteBytes)} of it in files still on the marketplace but no longer in assets/; remove them in the browser to free the space)`;
 
-        issues.push(issue('asset_capacity', `${full}The files in assets/ add up to ${fileSize(used)}, over the ${fileSize(capacity)} a product's media library holds.`, 'assets/'));
+        issues.push(issue('asset_capacity', `${full}The files in assets/ add up to ${fileSize(used)}${kept}, over the ${fileSize(capacity)} a product's media library holds.`, 'assets/'));
     }
 
     const accepted = contentTypesFor(Array.isArray(uploadRules.extensions) ? uploadRules.extensions : defaultUploadExtensions);

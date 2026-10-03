@@ -399,6 +399,24 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.ok(output.issues.filter((/** @type {any} */ issue) => issue.code.startsWith('asset_')).every((/** @type {any} */ issue) => issue.fix !== '' && typeof issue.file === 'string'));
     });
 
+    test('the capacity counts files still on the marketplace that assets/ no longer holds', async () => {
+        const text = listing(`category_ids: [${firstCategory.id}]`);
+        const big = Buffer.concat([png('big'), Buffer.alloc(4 * 1024 * 1024)]);
+        const assets = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((name) => [`${name}.png`, Buffer.concat([png(name), Buffer.alloc(4 * 1024 * 1024)])]));
+        const media = Object.entries(assets).map(([filename, contents]) => ({ tag: filename.slice(0, 1), filename, sha256: sha(contents), kind: 'image', library: null, size_bytes: contents.length }));
+        const product = (/** @type {string} */ title, /** @type {any[]} */ gone) => ({ title, slug: title.toLowerCase(), version: '1.1.0', template, listing: text, assets: { ...assets, 'f.png': big }, remote: syncedRemote(text, { media: [...media, ...gone] }) });
+        const root = temporaryWorkspace({
+            products: [
+                product('Sized', [{ tag: 'old', filename: 'old.png', sha256: 'x', kind: 'image', library: null, size_bytes: 3 * 1024 * 1024 }, { tag: 'three', filename: 'three.js', sha256: 'y', kind: 'library', library: 'three.js', size_bytes: 9 * 1024 * 1024 }]),
+                product('Unsized', [{ tag: 'old', filename: 'old.png', sha256: 'x', kind: 'image', library: null }]),
+            ],
+        });
+        const capacity = async (/** @type {string} */ slug) => (await runJson(['check', slug], { cwd: root, baseUrl: marketplace.baseUrl })).output.issues.filter((/** @type {any} */ issue) => issue.code === 'asset_capacity').map((/** @type {any} */ issue) => issue.message);
+
+        assert.deepEqual(await capacity('sized'), ['This media library is full (maximum 25 MB). The files in assets/ add up to 27 MB (3 MB of it in files still on the marketplace but no longer in assets/; remove them in the browser to free the space), over the 25 MB a product\'s media library holds.']);
+        assert.deepEqual(await capacity('unsized'), []);
+    });
+
     test('files already on the marketplace are not judged by their names or content again', async () => {
         const text = listing(`category_ids: [${firstCategory.id}]`);
         const jingle = Buffer.from('not really audio');
