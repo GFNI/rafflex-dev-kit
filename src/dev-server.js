@@ -14,6 +14,7 @@ import { qualityIssues } from './quality.js';
 import { unreleasedNotes } from './commands/release.js';
 import { productStatus } from './commands/status.js';
 import { blockContext, gameContext } from './context.js';
+import { frameSelection, serveOptionsRoute } from './options/preview.js';
 import { isGitInstalled, isInsideRepository } from './git.js';
 import { cspHeader, frameDocument, localCspDirectives } from './preview.js';
 import { kitVersion } from './version.js';
@@ -548,9 +549,10 @@ export async function startDevServer({
     const serveFrame = (product, url, response) => {
         const { scenario, playCount } = selectionFrom(url);
         const { template, scan } = productFiles(product);
+        const { files, options, overrides } = frameSelection({ product, url, template, scan, contexts: documents.contexts, basePath: productBasePath(product) });
         const context = product.type === 'block'
-            ? blockContext(documents.contexts, { files: scan.files, template })
-            : gameContext(documents.contexts, { scenario, playCount, files: scan.files, template });
+            ? blockContext(documents.contexts, { files, template, options, overrides })
+            : gameContext(documents.contexts, { scenario, playCount, files, template, options, overrides });
         let html = null;
         let error = null;
 
@@ -1008,6 +1010,10 @@ export async function startDevServer({
         if (rest.startsWith(resultsRoutePrefix)) {
             serveResult(product, rest.slice(resultsRoutePrefix.length), response);
 
+            return;
+        }
+
+        if (serveOptionsRoute({ product, rest, url, response, contexts: documents.contexts, basePath: productBasePath(product), productFiles: () => productFiles(product), sendJson, send })) {
             return;
         }
 

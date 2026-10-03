@@ -250,7 +250,109 @@
                                 <button type="button" :aria-pressed="preview.device === device.key" @click="preview.device = device.key; rememberQuery()" x-text="device.label"></button>
                             </template>
                         </div>
+                        <label class="control" x-show="product.type === 'game' && (optionsForm?.buyer_images ?? []).length > 0" title="Swap every image a buyer may replace for a placeholder of another shape">
+                            <input type="checkbox" :checked="preview.buyerImages" @change="preview.buyerImages = $event.target.checked; reloadFrame()">
+                            <span>Buyer images</span>
+                        </label>
                     </div>
+                    <details class="card options" x-show="(optionsForm?.fields ?? []).length > 0" :open="optionsOpen" @toggle="optionsOpen = $el.open">
+                        <summary class="row spread">
+                            <h2>Options</h2>
+                            <span class="muted" x-text="setOptionCount() === 0 ? 'Defaults' : `${setOptionCount()} set`"></span>
+                        </summary>
+                        <div class="stack options-body">
+                        <p class="muted">What a buyer sees. Values apply as they would on a live site.</p>
+                        <div class="option-fields">
+                            <template x-for="field in optionsForm?.fields ?? []" :key="field.key">
+                                <div class="field option" :class="{ wide: ['textarea', 'repeater', 'categories'].includes(field.type) }">
+                                    <span x-text="field.label"></span>
+                                    <template x-if="field.type === 'toggle'">
+                                        <label class="row"><input type="checkbox" :checked="optionChecked(field, optionValues)" @change="setOption(field.key, $event.target.checked)"><span class="muted" x-text="optionChecked(field, optionValues) ? 'On' : 'Off'"></span></label>
+                                    </template>
+                                    <template x-if="field.type === 'textarea'">
+                                        <textarea rows="3" :value="optionValues[field.key] ?? ''" :placeholder="optionPlaceholder(field)" @change="setOption(field.key, $event.target.value)"></textarea>
+                                    </template>
+                                    <template x-if="field.type === 'number'">
+                                        <input type="number" :value="optionValues[field.key] ?? ''" :placeholder="optionPlaceholder(field)" @change="setOption(field.key, $event.target.value)">
+                                    </template>
+                                    <template x-if="field.type === 'colour'">
+                                        <input type="color" :value="colourValue(field, optionValues[field.key])" @change="setOption(field.key, $event.target.value)">
+                                    </template>
+                                    <template x-if="field.type === 'image'">
+                                        <select @change="setOption(field.key, $event.target.value)">
+                                            <option value="" :selected="!optionValues[field.key]">Default</option>
+                                            <template x-for="image in optionsForm.images" :key="image.url">
+                                                <option :value="image.url" :selected="optionValues[field.key] === image.url" x-text="image.tag"></option>
+                                            </template>
+                                        </select>
+                                    </template>
+                                    <template x-if="['text', 'url'].includes(field.type) && field.choices.length > 0">
+                                        <select @change="setOption(field.key, $event.target.value)">
+                                            <option value="" :selected="!optionValues[field.key]">Default</option>
+                                            <template x-for="choice in field.choices" :key="choice">
+                                                <option :value="choice" :selected="optionValues[field.key] === choice" x-text="choice"></option>
+                                            </template>
+                                        </select>
+                                    </template>
+                                    <template x-if="['text', 'url'].includes(field.type) && field.choices.length === 0">
+                                        <input type="text" :value="optionValues[field.key] ?? ''" :placeholder="optionPlaceholder(field)" @change="setOption(field.key, $event.target.value)">
+                                    </template>
+                                    <template x-if="field.type === 'categories'">
+                                        <div class="row wrap">
+                                            <template x-for="category in optionsForm.categories" :key="category.slug">
+                                                <label class="row"><input type="checkbox" :checked="(optionValues.categories ?? []).includes(category.slug)" @change="toggleCategory(category.slug, $event.target.checked)"><span class="small" x-text="category.name"></span></label>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template x-if="field.type === 'repeater'">
+                                        <div class="stack tight">
+                                            <template x-for="(item, index) in optionValues[field.key] ?? []" :key="index">
+                                                <div class="option-item">
+                                                    <template x-for="child in field.fields" :key="child.key">
+                                                        <label class="field">
+                                                            <span class="small" x-text="child.label"></span>
+                                                            <template x-if="child.type === 'toggle'">
+                                                                <input type="checkbox" :checked="item[child.key] ?? child.starts" @change="setItemValue(field.key, index, child.key, $event.target.checked)">
+                                                            </template>
+                                                            <template x-if="child.type === 'image'">
+                                                                <select @change="setItemValue(field.key, index, child.key, $event.target.value)">
+                                                                    <option value="" :selected="!item[child.key]">Default</option>
+                                                                    <template x-for="image in optionsForm.images" :key="image.url">
+                                                                        <option :value="image.url" :selected="item[child.key] === image.url" x-text="image.tag"></option>
+                                                                    </template>
+                                                                </select>
+                                                            </template>
+                                                            <template x-if="child.type === 'colour'">
+                                                                <input type="color" :value="colourValue(child, item[child.key])" @change="setItemValue(field.key, index, child.key, $event.target.value)">
+                                                            </template>
+                                                            <template x-if="!['toggle', 'image', 'colour'].includes(child.type)">
+                                                                <input :type="child.type === 'number' ? 'number' : 'text'" :value="item[child.key] ?? ''" @change="setItemValue(field.key, index, child.key, $event.target.value)">
+                                                            </template>
+                                                        </label>
+                                                    </template>
+                                                    <button type="button" class="button ghost small" @click="removeItem(field.key, index)">Remove</button>
+                                                </div>
+                                            </template>
+                                            <div class="row">
+                                                <button type="button" class="button small" @click="addItem(field)" :disabled="(optionValues[field.key] ?? []).length >= optionsForm.max_repeater_items">Add item</button>
+                                                <span class="muted" x-text="`${(optionValues[field.key] ?? []).length} of ${optionsForm.max_repeater_items}`"></span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <span class="muted small" x-show="field.help" x-text="field.help"></span>
+                                </div>
+                            </template>
+                        </div>
+                        <ul class="list" x-show="(optionsForm?.warnings ?? []).length > 0">
+                            <template x-for="warning in optionsForm?.warnings ?? []" :key="warning">
+                                <li class="muted small" x-text="warning"></li>
+                            </template>
+                        </ul>
+                        <div class="row">
+                            <button type="button" class="button ghost small" @click="resetOptions()" :disabled="setOptionCount() === 0">Reset</button>
+                        </div>
+                        </div>
+                    </details>
                     <div class="frame" :data-device="preview.device">
                         <iframe title="Preview" sandbox="allow-scripts" :src="frameUrl"></iframe>
                     </div>

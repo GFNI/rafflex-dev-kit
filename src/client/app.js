@@ -63,8 +63,11 @@ document.addEventListener('alpine:init', () => {
             { key: 'tablet', label: 'Tablet' },
             { key: 'desktop', label: 'Desktop' },
         ],
-        preview: { scenario: null, playCount: null, device: 'desktop', revision: 0 },
+        preview: { scenario: null, playCount: null, device: 'desktop', revision: 0, buyerImages: false },
         previewProblems: [],
+        optionsForm: null,
+        optionValues: {},
+        optionsOpen: false,
         frameIssues: [],
         testLines: [],
         newProduct: { title: '', type: 'game', creating: false, error: null },
@@ -100,7 +103,17 @@ document.addEventListener('alpine:init', () => {
                 return 'about:blank';
             }
 
-            return `${productBase(this.product.path)}frame?${this.selectionQuery()}&v=${this.preview.revision}`;
+            const extra = new URLSearchParams();
+
+            if (this.setOptionCount() > 0) {
+                extra.set('options', JSON.stringify(this.optionValues));
+            }
+
+            if (this.preview.buyerImages) {
+                extra.set('buyer_images', '1');
+            }
+
+            return `${productBase(this.product.path)}frame?${this.selectionQuery()}${extra.size > 0 ? `&${extra}` : ''}&v=${this.preview.revision}`;
         },
 
         get newProductValues() {
@@ -167,12 +180,16 @@ document.addEventListener('alpine:init', () => {
             if (this.route.name === 'product') {
                 this.created = query.has('created');
                 this.tab = this.tabs.some((item) => item.key === query.get('tab')) ? query.get('tab') : 'preview';
-                this.preview = { scenario: query.get('scenario'), playCount: Number.parseInt(query.get('play_count') ?? '', 10) || null, device: query.get('device') ?? 'desktop', revision: 0 };
+                this.preview = { scenario: query.get('scenario'), playCount: Number.parseInt(query.get('play_count') ?? '', 10) || null, device: query.get('device') ?? 'desktop', revision: 0, buyerImages: false };
 
                 if (this.product?.path !== this.route.path) {
                     this.product = null;
                     this.testLines = [];
+                    this.optionsForm = null;
+                    this.optionValues = this.rememberedOptions(this.route.path);
                 }
+
+                this.loadOptions();
 
                 this.loadProduct();
             }
@@ -345,6 +362,7 @@ document.addEventListener('alpine:init', () => {
                 this.loadProduct();
 
                 if (change !== null && change.preview) {
+                    this.loadOptions();
                     this.reloadFrame();
                 }
             }
@@ -455,7 +473,133 @@ document.addEventListener('alpine:init', () => {
         },
 
         scenarioLabel(value) {
+            if (value === 'buyer_images') {
+                return 'Buyer images';
+            }
+
             return this.product?.scenarios.find((scenario) => scenario.value === value)?.label ?? value;
+        },
+
+        // The Options panel: the form a buyer sees (the inferred options with
+        // options.json applied), its values kept in the page and remembered
+        // per product in this browser.
+        async loadOptions() {
+            const path = this.route.path;
+
+            try {
+                const form = await this.getJson(`${productBase(path)}__rafflex/options`);
+
+                if (this.route.name === 'product' && this.route.path === path) {
+                    this.optionsForm = form;
+                }
+            } catch {
+                this.optionsForm = null;
+            }
+        },
+
+        optionsKey(path) {
+            return `rafflex-options:${path}`;
+        },
+
+        rememberedOptions(path) {
+            try {
+                const saved = JSON.parse(localStorage.getItem(this.optionsKey(path)) ?? '{}');
+
+                return saved !== null && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+            } catch {
+                return {};
+            }
+        },
+
+        optionsChanged() {
+            try {
+                localStorage.setItem(this.optionsKey(this.route.path), JSON.stringify(this.optionValues));
+            } catch {
+                // Not remembered in this browser.
+            }
+
+            this.reloadFrame();
+        },
+
+        setOptionCount() {
+            return Object.keys(this.optionValues).length;
+        },
+
+        setOption(key, value) {
+            const values = { ...this.optionValues };
+
+            if (value === '' || value === null || value === undefined) {
+                delete values[key];
+            } else {
+                values[key] = value;
+            }
+
+            this.optionValues = values;
+            this.optionsChanged();
+        },
+
+        resetOptions() {
+            this.optionValues = {};
+            this.optionsChanged();
+        },
+
+        optionChecked(field, values) {
+            return typeof values[field.key] === 'boolean' ? values[field.key] : field.starts === true;
+        },
+
+        optionPlaceholder(field) {
+            if (field.default !== null && typeof field.default !== 'object') {
+                return String(field.default);
+            }
+
+            return field.default_expression ? `Default: ${field.default_expression}` : '';
+        },
+
+        colourValue(field, value) {
+            const candidate = value ?? field.default;
+
+            return typeof candidate === 'string' && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : '#000000';
+        },
+
+        toggleCategory(slug, ticked) {
+            const current = (this.optionValues.categories ?? []).filter((entry) => entry !== slug);
+
+            this.setOption('categories', ticked ? [...current, slug] : (current.length > 0 ? current : null));
+        },
+
+        addItem(field) {
+            const items = [...(this.optionValues[field.key] ?? [])];
+
+            if (items.length < (this.optionsForm?.max_repeater_items ?? 20)) {
+                items.push({});
+                this.setOption(field.key, items);
+            }
+        },
+
+        removeItem(key, index) {
+            const items = (this.optionValues[key] ?? []).filter((item, position) => position !== index);
+
+            this.setOption(key, items.length > 0 ? items : null);
+        },
+
+        setItemValue(key, index, childKey, value) {
+            const items = (this.optionValues[key] ?? []).map((item, position) => {
+                if (position !== index) {
+                    return item;
+                }
+
+                const next = { ...item };
+
+                if (value === '' || value === null) {
+                    delete next[childKey];
+                } else {
+                    next[childKey] = value;
+                }
+
+                return next;
+            });
+
+            this.setOption(key, items);
         },
 
         issueWhere(issue) {

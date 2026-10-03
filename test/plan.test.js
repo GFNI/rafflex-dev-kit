@@ -62,6 +62,7 @@ describe('plan', () => {
             removed_assets: [],
             release_notes: 'Adds a blue wheel.',
             version: '1.3.0',
+            suggested_version: null,
         });
 
         const human = await run(['plan'], { cwd: directory, baseUrl: marketplace.baseUrl });
