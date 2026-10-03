@@ -27,4 +27,13 @@ The kit closes the loop: a product goes from an empty folder to in review withou
 * New blocking checks before a push: `listing_invalid`, `asset_filename`, `asset_duplicate`, `asset_capacity`, and `asset_content_mismatch`. `plan` refuses to upload a file a submitted or published version uses again (`asset_locked`) and says which name to use.
 * `plan --json` adds `listing_images` (the cover and new screenshots, compared by SHA-256, and the screenshots to remove) and `refusals`.
 
+### Options, as a buyer sees them
+
+* The kit infers the options a template reads exactly as the platform does (field types, labels, defaults, choices, repeaters, the Categories filter), held to a fixture suite recorded from the platform.
+* The app has an Options panel: the form a buyer sees, with the labels, help, and choices from `options.json`. Changing a value renders the preview with it. A Buyer images toggle swaps each image a buyer may replace for a placeholder of another shape.
+* `check` reports the platform's `option_warning`s, blocks on an `options.json` the marketplace would refuse (`option_override_invalid`), and renders every scenario once more with every option set as a buyer may set it (`option_render_error`).
+* Creator specs pass options with `open(scenario, {options})`, and the browser run adds a buyer images pass with screenshots.
+* `plan --json` adds `suggested_version`: the bump the platform would suggest against the live version's options, before the push.
+* Option overrides are compared after the same tidy up the marketplace applies, so `plan` no longer reports options as changed after every push.
+
 The command not found message now says to run the command with `npx @rafflex/dev@latest`.
