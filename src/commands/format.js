@@ -1,5 +1,5 @@
 import { renameSync, writeFileSync } from 'node:fs';
-import { scanAssets } from '../assets.js';
+import { recordedMedia, scanAssets } from '../assets.js';
 import { assetUrl } from '../dev-server.js';
 import { FormatError, formatTemplate } from '../format.js';
 import { loadDocuments } from '../remote.js';
@@ -31,7 +31,7 @@ export async function formatProduct(product, documents, { check = false } = {}) 
 
     const proof = documents === null
         ? null
-        : { type: product.type, documents, files: scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl).files };
+        : { type: product.type, documents, files: scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl, recordedMedia(product)).files };
 
     try {
         const { formatted, changed } = await formatTemplate(template, proof);

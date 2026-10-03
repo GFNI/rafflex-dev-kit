@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { extname, join, relative, sep } from 'node:path';
+import { basename, extname, join, relative, sep } from 'node:path';
 
 /**
  * Characters the platform's tag rules (English) transliterate to more
@@ -198,6 +198,7 @@ export function glbRefusal(contents) {
  * @typedef {{name: string, version: string, url: string, sha256: string, licence?: string, contents?: string, default_tag?: string}} ApprovedLibrary
  * @typedef {{path: string, filename: string, tag: string, kind: string, size: number, url: string, library?: ApprovedLibrary}} ProjectAsset
  * @typedef {{file: string, message: string}} AssetRefusal
+ * @typedef {{filename: string, tag: string, library?: any}} RemoteMediaEntry
  * @typedef {{assets: ProjectAsset[], refusals: AssetRefusal[], files: Record<string, string>}} AssetScan
  */
 
@@ -240,18 +241,76 @@ function listFiles(directory) {
 }
 
 /**
- * Read the project's assets folder as the studio would take the uploads:
- * each accepted file gets its default tag (suffixed -2, -3 when taken),
- * approved libraries map to their shared URL, and everything the media
- * library would refuse is reported with the platform's own message.
+ * The file name import writes a marketplace file under: its own name when
+ * that name gives its tag, else `<tag><extension>` (a file the creator
+ * retagged in the studio), so the folder reads back with the same tags.
+ * An approved library keeps its name. A name is never allowed to leave
+ * the assets folder.
+ *
+ * @param {{tag: string, filename: string, library?: any}} entry
+ */
+export function importedFilenameFor(entry) {
+    const filename = String(entry.filename ?? '').split(/[\\/]/).pop() ?? '';
+    const safe = filename !== '' && filename !== '.' && filename !== '..' && !filename.startsWith('.') ? filename : '';
+
+    if (entry.library !== null && entry.library !== undefined && safe !== '') {
+        return safe;
+    }
+
+    if (safe !== '' && defaultTagFor(safe) === entry.tag) {
+        return safe;
+    }
+
+    return `${entry.tag}${extname(safe).toLowerCase()}`;
+}
+
+/**
+ * Whether a local file is this marketplace file: the same file name, or
+ * the name import gave it.
+ *
+ * @param {RemoteMediaEntry} entry
+ * @param {string} filename
+ */
+export function isRemoteFile(entry, filename) {
+    return entry.filename === filename || importedFilenameFor(entry) === filename;
+}
+
+/**
+ * The media the marketplace held at the last push or sync, as product.json
+ * recorded it (`remote.media`); empty for a product never pushed.
+ *
+ * @param {{manifest?: {remote?: {media?: unknown}|null}}} product
+ * @returns {RemoteMediaEntry[]}
+ */
+export function recordedMedia(product) {
+    const media = product.manifest?.remote?.media;
+
+    return Array.isArray(media) ? media.filter((entry) => typeof entry?.filename === 'string' && typeof entry?.tag === 'string') : [];
+}
+
+/**
+ * Read the project's assets folder as the marketplace would take the
+ * uploads, and everything the media library would refuse is reported with
+ * the platform's own message. Tags are stable:
+ *
+ * - a file whose filename matches a file on the marketplace (the recorded
+ *   `remoteMedia`, or the name import gave that file) keeps that file's
+ *   tag, always, so deleting or adding another file never relabels it;
+ * - any other file takes its default tag (the slugified stem, or an
+ *   approved library's tag), suffixed -2, -3 past every tag a marketplace
+ *   file holds and every tag an earlier file here took, as the platform
+ *   suffixes a new file's default tag until it is unique in the library.
+ *
+ * Approved libraries map to their shared URL.
  *
  * @param {string} assetsDirectory
  * @param {{upload_rules: {extensions: string[], kinds_by_extension?: Record<string, string>, max_bytes_by_kind: Record<string, number>, max_tag_length?: number, tag_pattern?: {pattern: string, flags?: string}, refusals: Record<string, any>}}} rules
  * @param {ApprovedLibrary[]} libraries
  * @param {(relativePath: string) => string} urlFor The local URL a file is served at.
+ * @param {RemoteMediaEntry[]} [remoteMedia] The marketplace's files, from recordedMedia().
  * @returns {AssetScan}
  */
-export function scanAssets(assetsDirectory, rules, libraries, urlFor) {
+export function scanAssets(assetsDirectory, rules, libraries, urlFor, remoteMedia = []) {
     const uploadRules = rules.upload_rules;
     const refusalMessages = uploadRules.refusals ?? {};
     /** @type {ProjectAsset[]} */
@@ -260,11 +319,29 @@ export function scanAssets(assetsDirectory, rules, libraries, urlFor) {
     const refusals = [];
     /** @type {Record<string, string>} */
     const files = {};
-    const takenTags = new Set();
+    const takenTags = new Set(remoteMedia.map((entry) => entry.tag));
+    /** @type {Set<RemoteMediaEntry>} */
+    const claimed = new Set();
     const tagPattern = uploadRules.tag_pattern ? new RegExp(uploadRules.tag_pattern.pattern, (uploadRules.tag_pattern.flags ?? '').replace('g', '')) : /^[a-z0-9]+(-[a-z0-9]+)*$/;
     const maxTagLength = uploadRules.max_tag_length ?? 64;
 
-    for (const path of listFiles(assetsDirectory)) {
+    const paths = listFiles(assetsDirectory);
+    /** @type {Map<string, RemoteMediaEntry>} */
+    const sameName = new Map();
+
+    // Exact names first, so a file the marketplace holds under its own
+    // name is never taken by another file import named after its tag.
+    for (const path of paths) {
+        const filename = basename(path);
+        const entry = remoteMedia.find((candidate) => !claimed.has(candidate) && candidate.filename === filename);
+
+        if (entry !== undefined) {
+            claimed.add(entry);
+            sameName.set(path, entry);
+        }
+    }
+
+    for (const path of paths) {
         const relativePath = relative(assetsDirectory, path).split(sep).join('/');
         const filename = relativePath.split('/').pop() ?? relativePath;
         const extension = extname(filename).slice(1).toLowerCase();
@@ -320,18 +397,23 @@ export function scanAssets(assetsDirectory, rules, libraries, urlFor) {
             }
         }
 
-        const baseTag = library?.default_tag ?? defaultTagFor(filename);
+        const remoteEntry = sameName.get(path) ?? remoteMedia.find((entry) => !claimed.has(entry) && isRemoteFile(entry, filename));
+        const baseTag = remoteEntry?.tag ?? library?.default_tag ?? defaultTagFor(filename);
         let tag = baseTag;
         let suffix = 1;
 
-        while (takenTags.has(tag)) {
+        while (remoteEntry === undefined && takenTags.has(tag)) {
             suffix++;
             tag = `${baseTag}-${suffix}`;
         }
 
-        if (tag.length > maxTagLength || !tagPattern.test(tag)) {
+        if (remoteEntry === undefined && (tag.length > maxTagLength || !tagPattern.test(tag))) {
             refuse('invalid_tag');
             continue;
+        }
+
+        if (remoteEntry !== undefined) {
+            claimed.add(remoteEntry);
         }
 
         takenTags.add(tag);

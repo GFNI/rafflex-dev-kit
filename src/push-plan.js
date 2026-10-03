@@ -50,7 +50,8 @@ export function lockedAssetRefusals(changes, remote, rules) {
     const refusals = [];
 
     for (const asset of changes.assets.changed) {
-        const entry = media.find((candidate) => candidate.tag === asset.tag);
+        // Only an upload under the same name replaces a file there.
+        const entry = media.find((candidate) => candidate.filename === asset.filename);
 
         if (entry?.locked !== true || asset.library !== null) {
             continue;

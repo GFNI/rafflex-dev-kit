@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
-import { defaultTagFor } from '../assets.js';
+import { importedFilenameFor } from '../assets.js';
 import { readAll } from '../cli.js';
 import { commitProduct } from '../git.js';
 import { extensionFor, sniffContent } from '../file-content.js';
@@ -207,28 +207,8 @@ export function parseBundle(text) {
     return { ...bundle, media: bundle.media ?? [] };
 }
 
-/**
- * The file name a media entry is written under: its own name when the kit
- * derives the same tag from it, else `<tag><extension>`, because the kit
- * tags a file by its name (an approved library by its default tag). A
- * name is never allowed to leave the assets folder.
- *
- * @param {{tag: string, filename: string, library: any}} entry
- */
-export function localFilenameFor(entry) {
-    const filename = String(entry.filename ?? '').split(/[\\/]/).pop() ?? '';
-    const safe = filename !== '' && filename !== '.' && filename !== '..' && !filename.startsWith('.') ? filename : '';
-
-    if (entry.library !== null && entry.library !== undefined && safe !== '') {
-        return safe;
-    }
-
-    if (safe !== '' && defaultTagFor(safe) === entry.tag) {
-        return safe;
-    }
-
-    return `${entry.tag}${extname(safe).toLowerCase()}`;
-}
+/** The file name a media entry is written under (see importedFilenameFor). */
+export const localFilenameFor = importedFilenameFor;
 
 /**
  * The version to work on in a freshly imported product: the draft's,

@@ -1,4 +1,4 @@
-import { scanAssets } from '../assets.js';
+import { recordedMedia, scanAssets } from '../assets.js';
 import { isBlocking, runChecks, scenarioValues, verdictNote } from '../checker.js';
 import { assetUrl } from '../dev-server.js';
 import { productFileIssues } from '../product-checks.js';
@@ -45,7 +45,7 @@ export async function checkProduct(product, loaded, requestedPlayCount) {
         return { result: { product: product.path, passed: false, error: messageOf(error), issues: [], warnings: [...loaded.warnings], note: verdictNote }, skippedPatterns: [] };
     }
 
-    const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl);
+    const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl, recordedMedia(product));
     const playCount = requestedPlayCount ?? documents.contexts.play_count?.default ?? 5;
     const { issues, skippedPatterns } = runChecks({ template, files: scan.files, assetRefusals: scan.refusals, documents, playCount, renderedPlayCounts: 'all', type: product.type });
     const { overrides, error: overridesError } = readOptionOverrides(product);

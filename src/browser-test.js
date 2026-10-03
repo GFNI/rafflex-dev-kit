@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { scanAssets } from './assets.js';
+import { recordedMedia, scanAssets } from './assets.js';
 import { scenarioValues } from './checker.js';
 import { gameContext } from './context.js';
 import { assetUrl, startDevServer } from './dev-server.js';
@@ -298,7 +298,7 @@ export async function runBrowserTests({ browser, workspace, loaded, product }) {
     mkdirSync(screenshots, { recursive: true });
 
     const template = readTemplate(product);
-    const files = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl).files;
+    const files = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl, recordedMedia(product)).files;
     const playCount = documents.contexts.play_count?.default ?? 5;
     const isGame = product.type !== 'block';
     const scenarios = isGame ? scenarioValues(documents) : [null];

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { scanAssets } from './assets.js';
+import { isRemoteFile, recordedMedia, scanAssets } from './assets.js';
 import { canonicalListing, parseListing, resolveListingCategories, sortedJson } from './listing.js';
 import { readListingImages, remoteListingImagesFrom } from './listing-images.js';
 import { normaliseOverrideText, storedOverrides } from './options/overrides.js';
@@ -22,7 +22,8 @@ import { readTemplate } from './workspace.js';
  *   template. The live version's overrides, recorded without their
  *   template, are taken as the platform stored them
  * - listing: sha256 of the canonical listing (see listing.js)
- * - assets: sha256 of each file, compared with remote.media by tag, except
+ * - assets: sha256 of each file, compared with the remote.media entry of the
+ *   same file name (or the name import gave it), except
  *   approved libraries, which match by hash and then library name (a
  *   library attached under a custom tag is still the same library)
  */
@@ -198,7 +199,7 @@ export function readLocalState(product, documents = null) {
     }
 
     const rules = documents?.rules?.upload_rules ? documents.rules : fallbackRules;
-    const scan = scanAssets(product.assetsDirectory, rules, documents?.libraries?.libraries ?? [], (path) => path);
+    const scan = scanAssets(product.assetsDirectory, rules, documents?.libraries?.libraries ?? [], (path) => path, recordedMedia(product));
     const assets = scan.assets.map((asset) => ({
         path: `assets/${asset.path}`,
         filename: asset.filename,
@@ -270,7 +271,10 @@ export function compareWithRemote(local, remote) {
     }
 
     for (const asset of local.assets.filter((candidate) => candidate.library === null)) {
-        const remoteEntry = remoteMedia.find((entry) => !claimed.has(entry) && entry.tag === asset.tag);
+        // The same file is the one under the same name (or the name import
+        // gave it), which is also where its tag came from (scanAssets).
+        const remoteEntry = remoteMedia.find((entry) => !claimed.has(entry) && entry.filename === asset.filename)
+            ?? remoteMedia.find((entry) => !claimed.has(entry) && isRemoteFile(entry, asset.filename));
 
         if (remoteEntry === undefined) {
             assets.new.push(asset);

@@ -8,7 +8,7 @@ import { detectClients, detectOpeners } from './app/clients.js';
 import { feedbackView, productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
 import { promptSource } from './app/prompts.js';
 import { imageExtensions, readLastResult, resultsDirectoryName } from './app/results.js';
-import { scanAssets } from './assets.js';
+import { recordedMedia, scanAssets } from './assets.js';
 import { nonBlockingCodes, runChecks, scenarioValues, verdictNote } from './checker.js';
 import { productFileIssues } from './product-checks.js';
 import { qualityIssues } from './quality.js';
@@ -491,7 +491,7 @@ export async function startDevServer({
     const productFiles = (product) => {
         const template = readTemplate(product);
         const basePath = productBasePath(product);
-        const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], (path) => assetUrl(path, basePath));
+        const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], (path) => assetUrl(path, basePath), recordedMedia(product));
 
         return { template, scan };
     };

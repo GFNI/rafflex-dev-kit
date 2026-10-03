@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { scanAssets } from '../assets.js';
+import { recordedMedia, scanAssets } from '../assets.js';
 import { assetUrl } from '../dev-server.js';
 import { buyerImages } from './buyer-images.js';
 
@@ -37,7 +37,7 @@ export async function buyerImageRuns({ browser, workspace, product, template, do
         return null;
     }
 
-    const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl);
+    const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], assetUrl, recordedMedia(product));
 
     if (buyerImages(template, scan.assets, product.assetsDirectory, '/assets/').length === 0) {
         return null;
