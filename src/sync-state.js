@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { isRemoteFile, recordedMedia, scanAssets } from './assets.js';
-import { canonicalListing, parseListing, resolveListingCategories, sortedJson } from './listing.js';
+import { canonicalListing, canonicalTagNames, canonicalTagSlugs, parseListing, resolveListingCategories, sortedJson } from './listing.js';
 import { readListingImages, remoteListingImagesFrom } from './listing-images.js';
 import { normaliseOverrideText, storedOverrides } from './options/overrides.js';
 import { readTemplate } from './workspace.js';
@@ -104,9 +104,10 @@ export function optionOverridesHash(overrides, template = null, contexts = undef
 
 /**
  * @param {Partial<import('./listing.js').ListingFields>|null|undefined} listing
+ * @param {'slugs'|'names'} [tagsBy] How tags compare (see canonicalListing).
  */
-export function listingHash(listing) {
-    return sha256(canonicalListing(listing));
+export function listingHash(listing, tagsBy = 'slugs') {
+    return sha256(canonicalListing(listing, tagsBy));
 }
 
 /**
@@ -127,7 +128,9 @@ export function isRemoteStale(remote, now = Date.now()) {
  * @typedef {object} LocalState
  * @property {{sha256: string, text: string}|null} template   null when template.twig is missing.
  * @property {{sha256: string, value: Record<string, any>}|{error: string}} options
- * @property {{sha256: string, fields: import('./listing.js').ListingFields, unknown_categories: string[], unresolved_categories: string[]}|{error: string}} listing
+ * @property {{sha256: string, names_sha256: string, fields: import('./listing.js').ListingFields, unknown_categories: string[], unresolved_categories: string[]}|{error: string}} listing
+ *   `names_sha256` compares tags as written, for a remote state that
+ *   records the names behind the marketplace's tags (`listing_tag_names`).
  *   Category names are resolved to ids through categories.json; names it
  *   does not hold are `unknown_categories`, and names that could not be
  *   looked up (no category list) are `unresolved_categories`.
@@ -190,6 +193,7 @@ export function readLocalState(product, documents = null) {
         // listing never reads as unchanged; check blocks it anyway.
         listing = {
             sha256: unsettled.length === 0 ? listingHash(resolved.fields) : sha256(`${canonicalListing(resolved.fields)}\n${unsettled.join('\n')}`),
+            names_sha256: unsettled.length === 0 ? listingHash(resolved.fields, 'names') : sha256(`${canonicalListing(resolved.fields, 'names')}\n${unsettled.join('\n')}`),
             fields: resolved.fields,
             unknown_categories: resolved.unknown,
             unresolved_categories: resolved.unresolved,
@@ -243,7 +247,8 @@ export function compareWithRemote(local, remote) {
     const baseline = baselineOf(remote);
     const template = local.template === null || typeof baseline?.template_sha256 !== 'string' || local.template.sha256 !== baseline.template_sha256;
     const options = !('sha256' in local.options) || typeof baseline?.option_overrides_sha256 !== 'string' || local.options.sha256 !== baseline.option_overrides_sha256;
-    const listing = !('sha256' in local.listing) || local.listing.sha256 !== remote?.listing_sha256;
+    const tagsAsWritten = Array.isArray(/** @type {any} */ (remote)?.listing_tag_names);
+    const listing = !('sha256' in local.listing) || (tagsAsWritten ? local.listing.names_sha256 : local.listing.sha256) !== remote?.listing_sha256;
     const remoteMedia = Array.isArray(remote?.media) ? remote.media : [];
     /** @type {Set<import('./workspace.js').ProductRemote['media'][number]>} */
     const claimed = new Set();
@@ -398,6 +403,83 @@ export function latestReleasedVersion(product) {
     const versions = Array.isArray(product.versions) ? product.versions : [];
 
     return versions.find((version) => typeof version?.version === 'string') ?? null;
+}
+
+/**
+ * The tag names, as the creator wrote them in listing.md, behind the
+ * marketplace's tags at this moment, or null when the kit cannot say
+ * (then tags compare by slug). The platform keys a tag by a slug the kit
+ * does not reproduce for every script (a CJK or emoji only tag has an
+ * empty one there), so comparing slugs could show such a listing as
+ * changed forever. Taken from, in turn:
+ *
+ * - `sent`: the names a push just sent, which produced the marketplace's tags;
+ * - the previous record, while the marketplace still holds the tags it
+ *   held when that record was made;
+ * - `local`: listing.md's names, when they match the marketplace's tags by slug.
+ *
+ * @param {Record<string, any>} payload The product as the marketplace answered.
+ * @param {{previous?: Record<string, any>|null, sent?: unknown[], local?: unknown[]|null}} sources
+ * @returns {string[]|null}
+ */
+export function listingTagNamesFor(payload, { previous = null, sent, local = null }) {
+    const marketplace = canonicalTagNames(listingFromProduct(payload).tag_names);
+
+    if (Array.isArray(sent)) {
+        return canonicalTagNames(sent);
+    }
+
+    if (Array.isArray(previous?.listing_tag_names) && Array.isArray(previous?.listing_marketplace_tags)
+        && sortedJson(canonicalTagNames(previous.listing_marketplace_tags)) === sortedJson(marketplace)) {
+        return canonicalTagNames(previous.listing_tag_names);
+    }
+
+    if (Array.isArray(local) && sortedJson(canonicalTagSlugs(local)) === sortedJson(canonicalTagSlugs(marketplace))) {
+        return canonicalTagNames(local);
+    }
+
+    return null;
+}
+
+/**
+ * A remote block with the tag names behind the marketplace's tags
+ * recorded (`listing_tag_names`, and the marketplace's own names in
+ * `listing_marketplace_tags`), its listing hash then made with those
+ * names compared as written. Unchanged when `names` is null.
+ *
+ * @template {Record<string, any>} T
+ * @param {T} remote
+ * @param {Record<string, any>} payload
+ * @param {string[]|null} names
+ * @returns {T}
+ */
+export function withListingTagNames(remote, payload, names) {
+    if (names === null) {
+        return remote;
+    }
+
+    const fields = listingFromProduct(payload);
+
+    return {
+        ...remote,
+        listing_sha256: listingHash({ ...fields, tag_names: names }, 'names'),
+        listing_tag_names: names,
+        listing_marketplace_tags: canonicalTagNames(fields.tag_names),
+    };
+}
+
+/**
+ * listing.md's tag names, or null when it cannot be read.
+ *
+ * @param {{listingPath: string}} product
+ * @returns {string[]|null}
+ */
+export function localTagNames(product) {
+    try {
+        return existsSync(product.listingPath) ? parseListing(readFileSync(product.listingPath, 'utf8')).tag_names : [];
+    } catch {
+        return null;
+    }
 }
 
 /**

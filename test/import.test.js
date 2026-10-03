@@ -79,7 +79,9 @@ describe('import', () => {
                 template_sha256: templateHash(bundle.files['template.twig']),
                 option_overrides_sha256: optionOverridesHash(bundle.product.draft.option_overrides, bundle.product.draft.template),
             },
-            listing_sha256: listingHash({ description: 'Spin the wheel to win.', documentation: 'Set the colours in the options.\n\n## Tips\n\nKeep it short.', install_notes: '', video_url: 'https://video.example/spin', category_ids: [1, 5], tag_names: ['arcade', 'spin'] }),
+            listing_sha256: listingHash({ description: 'Spin the wheel to win.', documentation: 'Set the colours in the options.\n\n## Tips\n\nKeep it short.', install_notes: '', video_url: 'https://video.example/spin', category_ids: [1, 5], tag_names: ['arcade', 'spin'] }, 'names'),
+            listing_tag_names: ['arcade', 'spin'],
+            listing_marketplace_tags: ['arcade', 'spin'],
             latest_review: bundle.product.latest_review,
             media: [
                 { tag: 'background', filename: 'background.png', sha256: sha('png v1'), kind: 'image', library: null, size_bytes: 6 },

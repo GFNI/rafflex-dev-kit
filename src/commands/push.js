@@ -325,7 +325,7 @@ export async function runPushCommand(context) {
     }
 
     // 4. Plan against the state just read, and build the request.
-    const planned = { ...product, manifest: { ...product.manifest, remote: remoteForPlan(payload) } };
+    const planned = { ...product, manifest: { ...product.manifest, remote: remoteForPlan(payload, product.manifest.remote) } };
     let built;
     let request;
 
@@ -485,7 +485,8 @@ export async function runPushCommand(context) {
         const notUploaded = [...result.not_uploaded.map((entry) => entry.path), ...plan.refusals.map((/** @type {any} */ refusal) => refusal.path)];
 
         try {
-            const recorded = recordProductState({ workspace, product, payload: finalProduct, feedback: latestFeedback, kind: landed ? 'push' : 'auto', notUploaded: landed ? notUploaded : [] });
+            const sentTagNames = request.changed.listing ? request.body.listing.tag_names : undefined;
+            const recorded = recordProductState({ workspace, product, payload: finalProduct, feedback: latestFeedback, kind: landed ? 'push' : 'auto', notUploaded: landed ? notUploaded : [], sentTagNames });
 
             finishFromRecord(result, recorded, documents, product.path);
         } catch (error) {

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { remoteFromProduct } from './sync-state.js';
+import { listingTagNamesFor, remoteFromProduct, withListingTagNames } from './sync-state.js';
 
 /**
  * What one `push` sends through a sync link (PRD 45), built from the push
@@ -230,12 +230,18 @@ export function buildPushRequest({ product, payload, plan, template, listingImag
 
 /**
  * The remote state to plan a push against: the product as the link read
- * it, or nothing for a product not created yet.
+ * it (keeping the recorded tag names behind its tags while it still holds
+ * those tags), or nothing for a product not created yet.
  *
  * @param {Record<string, any>|null} payload
+ * @param {Record<string, any>|null} [recorded] product.json's remote block.
  */
-export function remoteForPlan(payload) {
-    return payload === null ? null : remoteFromProduct(payload);
+export function remoteForPlan(payload, recorded = null) {
+    if (payload === null) {
+        return null;
+    }
+
+    return withListingTagNames(remoteFromProduct(payload), payload, listingTagNamesFor(payload, { previous: recorded }));
 }
 
 /**

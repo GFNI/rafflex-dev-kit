@@ -11,7 +11,7 @@ import { loadDocuments, readCachedDocuments } from '../remote.js';
 import { confinedWritePath, isPlainFilename, isSlug, resolvesInside } from '../safe-paths.js';
 import { recordSyncTime } from '../sync-times.js';
 import { bumpVersion, isVersion } from '../semver.js';
-import { compareWithRemote, latestReleasedVersion, readLocalState, remoteFromProduct, sha256 } from '../sync-state.js';
+import { compareWithRemote, latestReleasedVersion, listingTagNamesFor, localTagNames, readLocalState, remoteFromProduct, sha256, withListingTagNames } from '../sync-state.js';
 import {
     assetsDirectoryName,
     assetTypeNamed,
@@ -286,7 +286,7 @@ async function writeProductFolder(directory, bundle, type) {
         slug: product.slug,
         title: typeof product.title === 'string' && product.title !== '' ? product.title : product.slug,
         version,
-        remote: remoteFromProduct(product),
+        remote: withListingTagNames(remoteFromProduct(product), product, listingTagNamesFor(product, { local: localTagNames({ listingPath: join(directory, listingFilename) }) })),
     });
 
     /** @type {{path: string, tag: string, sha256: string}[]} */

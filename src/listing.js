@@ -431,18 +431,32 @@ export function canonicalTagSlugs(names) {
 }
 
 /**
+ * Tag names as the creator wrote them, for comparing with the names a
+ * push sent: each trimmed, empty names (and "0") dropped, de-duplicated,
+ * and sorted (the platform keeps no order for tags).
+ *
+ * @param {unknown[]} names
+ * @returns {string[]}
+ */
+export function canonicalTagNames(names) {
+    return [...new Set(names.map((name) => String(name).trim()).filter((name) => name !== '' && name !== '0'))].sort();
+}
+
+/**
  * The canonical listing used for hashing: sorted key JSON of the six
  * fields, with category ids de-duplicated and sorted, tags compared as the
  * platform matches them (canonicalTagSlugs, so a tag the platform answers
- * with another spelling is the same tag), missing values empty, and the
- * three long text fields trimmed. Trimming both sides keeps the hash of a
- * parsed listing.md equal to the hash of the server's fields, whatever
- * blank lines surround a body.
+ * with another spelling is the same tag) or, with `tagsBy` "names", as
+ * the creator wrote them (canonicalTagNames), missing values empty, and
+ * the three long text fields trimmed. Trimming both sides keeps the hash
+ * of a parsed listing.md equal to the hash of the server's fields,
+ * whatever blank lines surround a body.
  *
  * @param {Partial<ListingFields>|null|undefined} listing
+ * @param {'slugs'|'names'} [tagsBy]
  * @returns {string}
  */
-export function canonicalListing(listing) {
+export function canonicalListing(listing, tagsBy = 'slugs') {
     const fields = { ...emptyListing(), ...(listing ?? {}) };
 
     return sortedJson({
@@ -450,7 +464,7 @@ export function canonicalListing(listing) {
         description: String(fields.description ?? '').trim(),
         documentation: String(fields.documentation ?? '').trim(),
         install_notes: String(fields.install_notes ?? '').trim(),
-        tag_names: canonicalTagSlugs(fields.tag_names ?? []),
+        tag_names: tagsBy === 'names' ? canonicalTagNames(fields.tag_names ?? []) : canonicalTagSlugs(fields.tag_names ?? []),
         video_url: fields.video_url ?? '',
     });
 }

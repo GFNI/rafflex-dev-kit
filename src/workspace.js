@@ -59,6 +59,8 @@ export const legacyLayoutMessage = 'This folder uses the old single project layo
  * @property {string|null} live_channel
  * @property {ProductRemoteDraft|null} draft
  * @property {string|null} listing_sha256
+ * @property {string[]} [listing_tag_names] The tag names, as listing.md wrote them, behind the marketplace's tags; listing tags then compare as written.
+ * @property {string[]} [listing_marketplace_tags] The marketplace's tag names when that record was made.
  * @property {Record<string, any>|null} latest_review
  * @property {{tag: string, filename: string, sha256: string|null, kind: string, library: any, locked?: boolean, size_bytes?: number}[]} media
  * @property {import('./listing-images.js').RemoteListingImages} [listing_images]  The cover and screenshots with their SHA-256, when the marketplace reported them.
@@ -436,7 +438,7 @@ export function selectProduct(workspace, name, cwd) {
 }
 
 const productKeys = ['type', 'slug', 'title', 'version', 'remote'];
-const remoteKeys = ['synced_at', 'status', 'live_version', 'live_channel', 'draft', 'listing_sha256', 'latest_review', 'media', 'listing_images'];
+const remoteKeys = ['synced_at', 'status', 'live_version', 'live_channel', 'draft', 'listing_sha256', 'listing_tag_names', 'listing_marketplace_tags', 'latest_review', 'media', 'listing_images'];
 const draftKeys = ['version', 'revision', 'submitted', 'template_sha256', 'option_overrides_sha256'];
 const mediaKeys = ['tag', 'filename', 'sha256', 'kind', 'library', 'locked', 'size_bytes'];
 

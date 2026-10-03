@@ -4,7 +4,7 @@ import { normaliseFeedback } from './feedback.js';
 import { commitProduct, currentBranch, gitState, lastPushCommit, runGit } from './git.js';
 import { isSlug, resolvesInside, slugPattern } from './safe-paths.js';
 import { bumpVersion, compareVersions, isVersion } from './semver.js';
-import { compareWithRemote, readLocalState, remoteFromProduct } from './sync-state.js';
+import { compareWithRemote, listingTagNamesFor, localTagNames, readLocalState, remoteFromProduct, withListingTagNames } from './sync-state.js';
 import { recordSyncTime } from './sync-times.js';
 import { formatProductJson, productFilename, writeProductJson } from './workspace.js';
 
@@ -229,15 +229,16 @@ export class UnsafeSlugError extends Error {}
  * @param {'push'|'auto'|'none'} [options.kind]
  * @param {string|null} [options.previousDirectory] A folder the product was renamed from earlier in the same command.
  * @param {string[]} [options.notUploaded] Paths, relative to the product folder, that a push did not upload.
+ * @param {string[]} [options.sentTagNames] The listing tag names a push just sent (see listingTagNamesFor).
  * @returns {RecordedState}
  */
-export function recordProductState({ workspace, product, payload, feedback, kind = 'auto', previousDirectory = null, notUploaded = [] }) {
+export function recordProductState({ workspace, product, payload, feedback, kind = 'auto', previousDirectory = null, notUploaded = [], sentTagNames }) {
     if (!isSlug(payload.slug)) {
         throw new UnsafeSlugError(`The marketplace answered with "${String(payload.slug)}" as the slug, which is not a valid slug, so nothing was recorded. Contact support@rafflex.io.`);
     }
 
-    const recorded = remoteFromProduct(payload);
     const previousRemote = /** @type {any} */ (product.manifest.remote);
+    const recorded = withListingTagNames(remoteFromProduct(payload), payload, listingTagNamesFor(payload, { previous: previousRemote, sent: sentTagNames, local: localTagNames(product) }));
     const keptFeedback = feedback === undefined ? (previousRemote?.feedback ?? null) : normaliseFeedback(feedback);
     const branch = currentBranch(workspace.root);
     const remote = { ...recorded, ...(keptFeedback === null ? {} : { feedback: keptFeedback }), branch };
