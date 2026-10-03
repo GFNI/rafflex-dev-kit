@@ -69,11 +69,86 @@ function setUpGit(directory) {
 }
 
 /**
- * `init`: create a workspace in the current folder: rafflex.json, the
- * generated AGENTS.md and CLAUDE.md, a .gitignore for the cache, and an
- * empty folder per asset type; then git init and commit when git is
- * installed. Refused inside an existing workspace (or the retired single
- * project layout). Existing files are never overwritten.
+ * @typedef {{workspace: string, created: string[], kept: string[], warnings: string[], git: ReturnType<typeof setUpGit>}} CreatedWorkspace
+ */
+
+/**
+ * Create a workspace in `directory`: rafflex.json, the generated AGENTS.md
+ * and CLAUDE.md, a .gitignore for the cache, and an empty folder per asset
+ * type; then git init and commit when git is installed. Existing files are
+ * never overwritten. The caller has already checked the folder is not
+ * inside a workspace.
+ *
+ * @param {string} directory
+ * @returns {Promise<CreatedWorkspace>}
+ */
+export async function createWorkspace(directory) {
+    /** @type {string[]} */
+    const warnings = [];
+    /** @type {string[]} */
+    const created = [];
+    /** @type {string[]} */
+    const kept = [];
+    const record = (/** @type {boolean} */ written, /** @type {string} */ name) => {
+        (written ? created : kept).push(name);
+    };
+
+    /** @type {import('../remote.js').LoadedDocuments|null} */
+    let loaded = null;
+
+    try {
+        loaded = await loadDocuments({ workspaceDirectory: directory, baseUrl: resolveBaseUrl(null), names: ['skeletons'] });
+        warnings.push(...loaded.warnings);
+    } catch (error) {
+        warnings.push(`Could not read the marketplace's workspace guidance: ${messageOf(error)}`);
+    }
+
+    const guidance = loaded?.documents.skeletons?.workspace;
+    const agentsMarkdown = typeof guidance?.agents_md === 'string' ? guidance.agents_md : null;
+    const claudeMarkdown = typeof guidance?.claude_md === 'string' ? guidance.claude_md : fallbackClaudeMarkdown;
+    const agentsContents = agentsMarkdown ?? fallbackAgentsMarkdown;
+    // The hash lets status refresh AGENTS.md later, only while it is still the kit's copy.
+    const agentsWritten = !existsSync(join(directory, agentsFilename));
+    const workspaceConfig = agentsWritten ? { workspace: WorkspaceFormat, agents_md_sha256: agentsHash(agentsContents) } : { workspace: WorkspaceFormat };
+
+    if (agentsMarkdown === null && loaded !== null) {
+        warnings.push('The marketplace did not send the workspace guidance, so AGENTS.md is a short stand in pointing at llms.txt.');
+    }
+
+    record(writeIfMissing(join(directory, workspaceFilename), `${JSON.stringify(workspaceConfig, null, 2)}\n`), workspaceFilename);
+    record(writeIfMissing(join(directory, agentsFilename), agentsContents), agentsFilename);
+    record(writeIfMissing(join(directory, 'CLAUDE.md'), claudeMarkdown), 'CLAUDE.md');
+
+    const ignored = ensureIgnored(directory);
+
+    if (ignored.created) {
+        record(true, '.gitignore');
+    } else if (ignored.added.length > 0) {
+        created.push(`.gitignore (added ${ignored.added.join(', ')})`);
+    } else {
+        record(false, '.gitignore');
+    }
+
+    for (const assetType of assetTypesFrom(loaded?.manifest)) {
+        const typeDirectory = join(directory, assetType.folder);
+        const existed = existsSync(typeDirectory);
+
+        mkdirSync(typeDirectory, { recursive: true });
+
+        if (!existed) {
+            writeIfMissing(join(typeDirectory, '.gitkeep'), '');
+        }
+
+        record(!existed, `${assetType.folder}/`);
+    }
+
+    return { workspace: directory, created, kept, warnings, git: setUpGit(directory) };
+}
+
+/**
+ * `init`: create a workspace in the current folder (see createWorkspace).
+ * Refused inside an existing workspace (or the retired single project
+ * layout).
  *
  * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number>}
@@ -91,66 +166,7 @@ export async function runInitCommand(context) {
         return fail(context, messageOf(error), 1);
     }
 
-    /** @type {string[]} */
-    const warnings = [];
-    /** @type {string[]} */
-    const created = [];
-    /** @type {string[]} */
-    const kept = [];
-    const record = (/** @type {boolean} */ written, /** @type {string} */ name) => {
-        (written ? created : kept).push(name);
-    };
-
-    /** @type {import('../remote.js').LoadedDocuments|null} */
-    let loaded = null;
-
-    try {
-        loaded = await loadDocuments({ workspaceDirectory: cwd, baseUrl: resolveBaseUrl(null), names: ['skeletons'] });
-        warnings.push(...loaded.warnings);
-    } catch (error) {
-        warnings.push(`Could not read the marketplace's workspace guidance: ${messageOf(error)}`);
-    }
-
-    const guidance = loaded?.documents.skeletons?.workspace;
-    const agentsMarkdown = typeof guidance?.agents_md === 'string' ? guidance.agents_md : null;
-    const claudeMarkdown = typeof guidance?.claude_md === 'string' ? guidance.claude_md : fallbackClaudeMarkdown;
-    const agentsContents = agentsMarkdown ?? fallbackAgentsMarkdown;
-    // The hash lets status refresh AGENTS.md later, only while it is still the kit's copy.
-    const agentsWritten = !existsSync(join(cwd, agentsFilename));
-    const workspaceConfig = agentsWritten ? { workspace: WorkspaceFormat, agents_md_sha256: agentsHash(agentsContents) } : { workspace: WorkspaceFormat };
-
-    if (agentsMarkdown === null && loaded !== null) {
-        warnings.push('The marketplace did not send the workspace guidance, so AGENTS.md is a short stand in pointing at llms.txt.');
-    }
-
-    record(writeIfMissing(join(cwd, workspaceFilename), `${JSON.stringify(workspaceConfig, null, 2)}\n`), workspaceFilename);
-    record(writeIfMissing(join(cwd, agentsFilename), agentsContents), agentsFilename);
-    record(writeIfMissing(join(cwd, 'CLAUDE.md'), claudeMarkdown), 'CLAUDE.md');
-
-    const ignored = ensureIgnored(cwd);
-
-    if (ignored.created) {
-        record(true, '.gitignore');
-    } else if (ignored.added.length > 0) {
-        created.push(`.gitignore (added ${ignored.added.join(', ')})`);
-    } else {
-        record(false, '.gitignore');
-    }
-
-    for (const assetType of assetTypesFrom(loaded?.manifest)) {
-        const directory = join(cwd, assetType.folder);
-        const existed = existsSync(directory);
-
-        mkdirSync(directory, { recursive: true });
-
-        if (!existed) {
-            writeIfMissing(join(directory, '.gitkeep'), '');
-        }
-
-        record(!existed, `${assetType.folder}/`);
-    }
-
-    const git = setUpGit(cwd);
+    const { created, kept, warnings, git } = await createWorkspace(cwd);
 
     if (options.json) {
         writeJson(stdout, { workspace: cwd, created, kept, warnings, git });
