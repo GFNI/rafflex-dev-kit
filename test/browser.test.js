@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -36,6 +37,21 @@ const launched = playwright === null ? { browser: null } : await launchChromium(
 const browserAvailable = launched.browser !== null;
 
 await launched.browser?.close();
+
+describe('installing Playwright', () => {
+    test('keeps the installers\' output off stdout, so --json stays one document', () => {
+        const root = temporaryWorkspace();
+        const script = `
+            import { installPlaywright } from ${JSON.stringify(new URL('../src/playwright.js', import.meta.url).href)};
+            const step = { command: process.execPath, args: ['-e', 'console.log("downloading chromium")'], env: {} };
+            process.stdout.write(JSON.stringify(installPlaywright(${JSON.stringify(root)}, process.stderr, [step])));
+        `;
+        const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' });
+
+        assert.equal(result.stdout, '{"ok":true}');
+        assert.match(result.stderr, /downloading chromium/);
+    });
+});
 
 describe('browser tests without Playwright', () => {
     /** @type {Awaited<ReturnType<typeof startFixtureServer>>} */

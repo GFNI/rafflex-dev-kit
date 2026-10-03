@@ -441,6 +441,12 @@ export function alpineIssues(html, template, scenario) {
                 globals[key] = 'writable';
             }
 
+            // Alpine evaluates the loop element's other attributes, :key
+            // above all, once per item with the loop names in scope.
+            for (const key of loopParts?.names ?? []) {
+                globals[key] = 'writable';
+            }
+
             for (const attribute of tag.attributes) {
                 const name = attribute.name;
                 const isDirective = name.startsWith('@') || name.startsWith(':') || name.startsWith('x-');

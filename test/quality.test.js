@@ -87,6 +87,14 @@ describe('Alpine state', () => {
         ]);
     });
 
+    test('reads the loop names in scope on the x-for element itself, as :key does', () => {
+        const html = '<div x-data="{ plays: [] }"><template x-for="(play, index) in plays" :key="play.ticket_number + index"><p x-text="play.prize"></p></template><i :key="play"></i></div>';
+
+        assert.deepEqual(alpineIssues(html, html, undefined).map((issue) => issue.message), [
+            ':key="play" reads play, which no enclosing x-data declares.',
+        ]);
+    });
+
     test('skips component functions and markup outside any component', () => {
         const html = '<div x-data="game()"><p x-text="anything"></p></div><p x-text="outside"></p>';
 
