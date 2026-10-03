@@ -705,7 +705,7 @@ export async function startDevServer({
         const health = [
             loaded.offline || staleRules
                 ? { key: 'rules', ok: false, label: 'Using saved platform rules', fix: 'Connect to the internet, then close and start the app again.' }
-                : { key: 'rules', ok: true, label: `Platform rules are current${documents.rules.version ? ` (${documents.rules.version})` : ''}`, fix: null },
+                : { key: 'rules', ok: true, label: 'Platform rules are current', fix: null },
             { key: 'kit', ok: true, label: `Kit ${kitVersion}`, fix: null },
             !git.installed
                 ? { key: 'git', ok: false, label: 'git is missing', fix: 'Install git from git-scm.com so every change can be undone.' }

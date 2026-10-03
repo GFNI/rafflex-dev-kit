@@ -135,7 +135,13 @@ document.addEventListener('alpine:init', () => {
                 groups.set(key, [...(groups.get(key) ?? []), shot]);
             }
 
-            return [...groups.entries()].map(([scenario, shots]) => ({ scenario, shots }));
+            const order = (shot) => {
+                const index = ['phone', 'mobile', 'tablet', 'desktop'].indexOf(String(shot.device).toLowerCase());
+
+                return index === -1 ? Number.parseInt(shot.device, 10) || 99 : index - 10;
+            };
+
+            return [...groups.entries()].map(([scenario, shots]) => ({ scenario, shots: [...shots].sort((first, second) => order(first) - order(second)) }));
         },
 
         go(href) {

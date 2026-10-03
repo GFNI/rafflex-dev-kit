@@ -1,10 +1,12 @@
 # @rafflex/dev
 
 ```sh
-npx @rafflex/dev init && npx @rafflex/dev new game "Spin to Win"
+npx @rafflex/dev@latest
 ```
 
-Keep every Rafflex marketplace game and block you sell in one workspace on your own machine: preview each with the platform's sample data in every play scenario, use your own art and 3D models, see the platform's rules flagged as you save, and know which version is live, in review, and changed. Push through your connected AI when it is right. Needs Node 20 or newer.
+* It sets up a workspace in a new `rafflex` folder (or opens the one you are in) and opens the Rafflex app in your browser. It asks nothing.
+* The app shows every game and block you are building, previews each one in every play scenario, and tests it with one click.
+* It hands every next step to your AI as a ready made prompt, so you never need a terminal again. Needs Node 20 or newer.
 
 The full reference lives on the marketplace, so it always matches the rules in force:
 
@@ -32,7 +34,7 @@ rafflex/
     winner-wall/
 ```
 
-The layout is fixed. `init` creates it (and a git repository with a first commit when git is installed); `new` adds a product folder.
+The layout is fixed. `npx @rafflex/dev` outside a workspace (or `init` in an empty folder) creates it, with a git repository and a first commit when git is installed; `new` adds a product folder.
 
 ## Commands
 
@@ -42,7 +44,7 @@ Every command takes `--json` and exits 0 on success, 1 when a check finds a bloc
 | --- | --- |
 | `npx @rafflex/dev init` | Creates the workspace in this folder. Refused inside an existing one. |
 | `npx @rafflex/dev new <game\|block> "<title>"` | Adds a product folder named after the title, from the type's starter template, at version 1.0.0. |
-| `npx @rafflex/dev [--port N] [--no-open]` | Starts one preview server for the whole workspace (port 5173, or the next free one) and opens the product you are in, or the workspace index anywhere else. `npx @rafflex/dev dev <product>` opens a named product. See [Preview](#preview). |
+| `npx @rafflex/dev [--port N] [--no-open]` | Starts the Rafflex app for the whole workspace (port 5173, or the next free one) and opens the product you are in, or Home anywhere else. Outside a workspace it first sets one up in a new `rafflex` folder here, asking nothing. `npx @rafflex/dev dev <product>` opens a named product. See [The app](#the-app). |
 | `npx @rafflex/dev format [<product>...\|--all] [--check]` | Formats templates in the house style (below). `--check` reports without writing. JSON: `{product, formatted, changed, written, error}`, or `{passed, products: [...]}` for several. |
 | `npx @rafflex/dev check [<product>...\|--all]` | Renders every scenario headlessly and runs the rules, then the lint warnings and a format check. Outside a product folder it checks every product. `--json` prints one product's result, or `{passed, products: [...]}` for several. |
 | `npx @rafflex/dev test [<product>...\|--all] [--install]` | The browser tests (below). Without Playwright it prints the install command and skips. `--install` installs Playwright and Chromium into `.rafflex/playwright` (about 100 MB; the AI asks first). JSON: `{product, passed, skipped, reason, install, issues, runs, playthrough, creator_tests, results}`. |
@@ -78,9 +80,18 @@ When the server's draft changed since your last sync (the creator edited it in t
 * **Test (Playwright, optional).** Every scenario at phone, tablet, and desktop widths in headless Chromium under the preview CSP, recording console errors, uncaught exceptions, failed requests, and CSP violations, with a screenshot of each in `.results/screenshots/`. For a game with the hooks, a playthrough clicks `data-rafflex-play` once per entry in `plays` and checks each `data-rafflex-result="win|lose"` revealed matches the predetermined result, in order, and that no plays shows an empty state. A mismatch is the blocking `playthrough_mismatch`. Uncaught exceptions and CSP violations block too; console errors and failed requests are warnings.
 * **Your own specs.** `tests/*.spec.mjs` export a test function, or an object of named ones, as the default export. Each receives the kit's helpers: `open(scenario, {width, playCount})`, `playNext()` (returns `win` or `lose`), `result()`, `results()`, `expected(scenario)`, `screenshot(name)`, `page` (Playwright), and `assert` (`node:assert/strict`). A failure is the blocking `creator_test_failed`.
 
-## Preview
+## The app
 
-`npx @rafflex/dev` serves the whole workspace from one local server. The index at `/` lists every product with its type, version, remote state from the last sync (live version, in review, changes requested, or not pushed yet), and what changed locally since. Each product's preview lives at `/p/<type folder>/<folder>/` (for example `/p/games/spin-to-win/`) with scenario, play count, and device controls, a problems panel, and live reload. Saving a product's `template.twig`, `options.json`, `product.json`, or anything in its `assets/` reloads only that product's preview; adding or removing a product refreshes the index. A product's frame and files map reach only its own `assets/` folder.
+`npx @rafflex/dev` serves the Rafflex app for the whole workspace on `127.0.0.1`, and prints three lines: the workspace, the app's address, and "Leave this running. Close it with Ctrl+C."
+
+* **Home:** the Get started prompt for your AI, the AI apps found on this computer with their connect commands, New game and New block, and a health strip (rules, kit version, git).
+* **Products:** every product with its version, state (Not pushed yet, Changes not pushed, In review, Changes requested, Live 1.2.0), and last test result (Passed, Issues, Not tested).
+* **Product** at `/p/<type folder>/<folder>/` (for example `/p/games/spin-to-win/`): the preview with scenario, play count, and device controls; Test, which runs `verify` with live progress and shows blocking issues with fix prompts, screenshots, and the playthrough from the product's `.results/`; Get it live, the next step with its prompt (disabled while tests have blocking issues); prompts for changing, fixing, the next version, and reverting; and the Unreleased notes.
+* **New product:** a name and a type, which runs `new`, then the prompt to hand to your AI.
+
+Everything updates by itself: saving a product's `template.twig`, `options.json`, `product.json`, or anything in its `assets/` reloads only that product's preview, and products your AI adds, tests, or pushes appear and change on their own. Every prompt comes from the marketplace's `/dev-kit/prompts.json`, filled in locally, so the wording improves without a kit release.
+
+The app answers only requests addressed to its own address (no DNS rebinding), every action (new product, test, open folder) needs a random token generated at start and embedded in the page, and every path is checked to resolve inside the workspace. A product's frame and files map reach only its own `assets/` folder. The app holds no account access: publishing stays with your AI.
 
 Files in `assets/` are referenced as `{{ files['tag'] }}`, where the tag is the slugified filename stem (`Win Jingle.mp3` becomes `win-jingle`), the same tag the studio gives an upload. An approved library build (for example the three.js bundle) is recognised by its SHA-256 and loads from its shared URL, byte identical to the live site.
 

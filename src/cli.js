@@ -41,7 +41,7 @@ Options
   --verbose           check: also list rules the kit cannot apply locally
   --type game|block   new: the product type, instead of the first argument
   --force             import: replace an existing product folder
-  --port N            Preferred preview port (default 5173, the next free one if taken)
+  --port N            Preferred app port (default 5173, the next free one if taken)
   --no-open           Do not open the browser
   -h, --help          Show this help
   -v, --version       Show the kit's version
