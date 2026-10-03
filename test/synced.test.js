@@ -90,7 +90,7 @@ describe('synced', () => {
         assert.match(otherType.output.error.message, /is for a game \(spin-to-win\), but blocks\/winner-wall is a block/);
         assert.equal(empty.code, 2);
         assert.equal(empty.output.error.code, 'no_link');
-        assert.match(empty.output.error.message, /Pipe the get_product result/);
+        assert.match(empty.output.error.message, /pipe the get_product result/);
         assert.equal(notProduct.code, 2);
         assert.equal(productJson(root, 'games/spin-to-win').remote, null);
     });

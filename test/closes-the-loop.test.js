@@ -273,6 +273,17 @@ describe('published limits and usage', () => {
         assert.deepEqual(overrideProblems(choices, /** @type {any} */ (fields), {}), []);
     });
 
+    test('synced without a link says standard input is for a shell that cannot reach the marketplace', async () => {
+        const root = temporaryWorkspace({ products: [{ title: 'Spin to Win' }] });
+        const { code, output } = await runJson(['synced', 'spin-to-win'], { cwd: root });
+
+        assert.equal(code, 2);
+        assert.equal(output.error.code, 'no_link');
+        assert.match(output.error.message, /npx @rafflex\/dev synced games\/spin-to-win "<sync_url>"/);
+        assert.match(output.error.message, /Only when this shell cannot reach the marketplace \(a sandbox without network access\), pipe the get_product result/);
+        assert.doesNotMatch(output.error.message, /no shell/);
+    });
+
     test('the sync commands quote their links in every usage line', async () => {
         const usage = Object.fromEntries(publishedCommands().map((command) => [command.name, command.usage]));
 

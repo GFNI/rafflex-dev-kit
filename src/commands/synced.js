@@ -101,7 +101,7 @@ export async function runSyncedCommand(context) {
             parsed = JSON.parse(input);
         } catch {
             return failWithCode(context, input.trim() === ''
-                ? { code: 'no_link', message: `Give this command a sync link from request_sync: npx @rafflex/dev synced ${product.slug ?? product.path} "<sync_url>". Pipe the get_product result for ${product.title} to it instead only when your AI app has no shell.` }
+                ? { code: 'no_link', message: `Give this command a sync link from request_sync: npx @rafflex/dev synced ${product.slug ?? product.path} "<sync_url>". Only when this shell cannot reach the marketplace (a sandbox without network access), pipe the get_product result for ${product.title} to it instead.` }
                 : { code: 'invalid_input', message: 'Standard input is not JSON. Pipe the get_product result exactly as the tool returned it.' }, 2);
         }
 

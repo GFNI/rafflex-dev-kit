@@ -192,7 +192,7 @@ describe('the checklist and the new checks through the CLI', () => {
 
         assert.match(human.stdout, /1\. request_media_upload: listing\/cover\.png as filename cover\.png with purpose cover, image\/png, \d+ bytes \(new\)/);
         assert.match(human.stdout, /2\. request_media_upload: listing\/screenshots\/02\.png as filename screenshot-02\.png with purpose screenshot, image\/png, \d+ bytes \(new\)/);
-        assert.match(human.stdout, /1 screenshot is on the marketplace but not in listing\/screenshots\/; push removes it\.\n {2}Without a shell, tell the creator to remove those screenshots in the browser before the uploads\./);
+        assert.match(human.stdout, /1 screenshot is on the marketplace but not in listing\/screenshots\/; push removes it\.\n {2}When this shell cannot reach the marketplace, tell the creator to remove those screenshots in the browser before the uploads\./);
         assert.doesNotMatch(human.stdout, /Before review/);
     });
 

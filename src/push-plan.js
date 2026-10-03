@@ -121,7 +121,7 @@ export function planListingImageLines(plan) {
     }
 
     if (removedCount > 0) {
-        notes.push('  Without a shell, tell the creator to remove those screenshots in the browser before the uploads.');
+        notes.push('  When this shell cannot reach the marketplace, tell the creator to remove those screenshots in the browser before the uploads.');
     }
 
     for (const refusal of plan.refusals) {
@@ -132,7 +132,7 @@ export function planListingImageLines(plan) {
 }
 
 /** The line that introduces the tool by tool route in the plan's prose. */
-export const toolRouteHeading = '  Without a shell, call these marketplace tools in order instead:';
+export const toolRouteHeading = '  When this shell cannot reach the marketplace (a sandbox without network access), call these marketplace tools in order instead:';
 
 /**
  * The plan's push steps for an AI with a shell: ask for a sync link with

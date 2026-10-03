@@ -110,8 +110,8 @@ function planLines(plan, product) {
 
     if (plan.stale_remote) {
         lines.push(remote === null
-            ? (plan.slug === null ? '  Not on the marketplace yet.' : '  Never synced: push reads the marketplace first. Without a shell, read it with get_product and pipe the result to synced before pushing.')
-            : '  The remote snapshot is over a day old: push reads the marketplace first. Without a shell, read it with get_product and pipe the result to synced before pushing.');
+            ? (plan.slug === null ? '  Not on the marketplace yet.' : '  Never synced: push reads the marketplace first. When this shell cannot reach the marketplace, read it with get_product and pipe the result to synced before pushing.')
+            : '  The remote snapshot is over a day old: push reads the marketplace first. When this shell cannot reach the marketplace, read it with get_product and pipe the result to synced before pushing.');
     }
 
     if (remote?.draft?.submitted === true) {
@@ -227,9 +227,9 @@ function verifyPlanLines(verify, name) {
 
 /**
  * `plan <product>`: what to push, as data, compared with the remote
- * snapshot `synced` last recorded. With a shell the AI asks for a sync
+ * snapshot `synced` last recorded. The AI asks for a sync
  * link with request_sync and runs `push`, which sends exactly this; the
- * prose also lists the tool by tool route for AI apps without a shell.
+ * prose also lists the tool by tool route for a shell that cannot reach the marketplace.
  *
  * JSON: `{product, slug, nothing_to_push, stale_remote, template: {changed},
  * options: {changed, option_overrides?}, listing: {changed, fields?},
