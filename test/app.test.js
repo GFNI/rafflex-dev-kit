@@ -180,10 +180,11 @@ describe('the app on localhost', () => {
         const url = `${server.url}p/games/brand-new/__rafflex/actions/open-folder`;
         const json = { 'Content-Type': 'application/json' };
         const origin = server.url.replace(/\/$/, '');
+        const oneCharacterOff = `${server.token.slice(0, -1)}${server.token.endsWith('0') ? '1' : '0'}`;
 
         assert.equal((await send(url, { method: 'POST', headers: json, body: '{}' })).status, 403);
         assert.equal((await send(url, { method: 'POST', headers: { ...json, [tokenHeader]: 'nope' }, body: '{}' })).status, 403);
-        assert.equal((await send(url, { method: 'POST', headers: { ...json, [tokenHeader]: `${server.token.slice(0, -1)}0` }, body: '{}' })).status, 403);
+        assert.equal((await send(url, { method: 'POST', headers: { ...json, [tokenHeader]: oneCharacterOff }, body: '{}' })).status, 403);
         assert.equal((await send(url, { method: 'POST', headers: { 'Content-Type': 'text/plain', [tokenHeader]: server.token }, body: '{}' })).status, 403);
         assert.equal((await send(url, { method: 'POST', headers: { ...json, [tokenHeader]: server.token, Origin: 'https://attacker.example' }, body: '{}' })).status, 403);
         assert.deepEqual(opened, []);
