@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rafflex workspace</title>
+    <link rel="stylesheet" href="/__rafflex/app.css">
+    <script type="module" src="/__rafflex/workspace.js"></script>
+</head>
+<body>
+    <header class="toolbar">
+        <div class="toolbar-title">
+            <strong>Rafflex workspace</strong>
+            <span id="workspace-path" class="muted"></span>
+        </div>
+        <span id="workspace-meta" class="muted"></span>
+    </header>
+
+    <main class="index">
+        <ul id="warnings" class="warnings"></ul>
+
+        <div id="empty" class="empty" hidden>
+            <h1>No products yet</h1>
+            <p class="muted">Create your first one in this folder, and it appears here:</p>
+            <pre><code>npx @rafflex/dev new game "My game"</code></pre>
+            <p class="muted">Use <code>block</code> instead of <code>game</code> for a block. Bring an existing product down from the marketplace with <code>npx @rafflex/dev import</code>.</p>
+        </div>
+
+        <ul id="products" class="product-list" aria-label="Products"></ul>
+    </main>
+</body>
+</html>

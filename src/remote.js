@@ -5,13 +5,13 @@ import { kitVersion } from './version.js';
 /**
  * The marketplace's public dev kit documents (rules, contexts, skeletons,
  * libraries, fixtures), fetched from the manifest with ETags and cached in
- * the project so the kit works offline. These GET requests are the only
+ * the workspace (.rafflex/cache/<host>/) so the kit works offline. These GET requests are the only
  * network traffic the kit makes: no credentials, no telemetry, no uploads.
  */
 
 export const defaultBaseUrl = 'https://marketplace.rafflex.io';
 
-export const projectDocuments = ['rules', 'contexts', 'skeletons', 'libraries'];
+export const workspaceDocuments = ['rules', 'contexts', 'skeletons', 'libraries'];
 
 const requestTimeoutMs = 15000;
 
@@ -32,11 +32,11 @@ export class RulesUnavailableError extends Error {
  * The marketplace base URL: RAFFLEX_BASE_URL, then rafflex.json's
  * base_url, then production.
  *
- * @param {{base_url?: string|null}|null} [projectConfig]
+ * @param {{base_url?: string|null}|null} [workspaceConfig]
  * @param {NodeJS.ProcessEnv} [env]
  */
-export function resolveBaseUrl(projectConfig = null, env = process.env) {
-    const configured = env.RAFFLEX_BASE_URL || projectConfig?.base_url || defaultBaseUrl;
+export function resolveBaseUrl(workspaceConfig = null, env = process.env) {
+    const configured = env.RAFFLEX_BASE_URL || workspaceConfig?.base_url || defaultBaseUrl;
 
     return configured.replace(/\/+$/, '');
 }
@@ -46,6 +46,37 @@ export function resolveBaseUrl(projectConfig = null, env = process.env) {
  */
 function cacheKeyFor(baseUrl) {
     return new URL(baseUrl).host.replace(/[^a-z0-9.-]/gi, '_');
+}
+
+/**
+ * The cache folder for a marketplace inside a workspace.
+ *
+ * @param {string} workspaceDirectory
+ * @param {string} baseUrl
+ */
+export function cacheDirectoryFor(workspaceDirectory, baseUrl) {
+    return join(workspaceDirectory, '.rafflex', 'cache', cacheKeyFor(baseUrl));
+}
+
+/**
+ * The cached documents (and manifest) without any network request, for
+ * offline commands such as status. A document never downloaded is null.
+ *
+ * @param {string} workspaceDirectory
+ * @param {string} baseUrl
+ * @param {string[]} [names]
+ * @returns {{documents: Record<string, any>, manifest: Manifest|null}}
+ */
+export function readCachedDocuments(workspaceDirectory, baseUrl, names = workspaceDocuments) {
+    const cacheDirectory = cacheDirectoryFor(workspaceDirectory, baseUrl);
+    /** @type {Record<string, any>} */
+    const documents = {};
+
+    for (const name of names) {
+        documents[name] = readJson(join(cacheDirectory, `${name}.json`));
+    }
+
+    return { documents, manifest: readJson(join(cacheDirectory, 'manifest.json')) };
 }
 
 /**
@@ -113,13 +144,15 @@ function describeError(error) {
 
 /**
  * @typedef {{url: string, version?: string}} EndpointEntry
- * @typedef {{version?: string, generated_at?: string, endpoints: Record<string, string|EndpointEntry>, versions?: Record<string, string>}} Manifest
+ * @typedef {{value: string, folder: string, label?: string}} AssetTypeEntry
+ * @typedef {{name: string, usage: string, summary?: string, json?: boolean}} CommandEntry
+ * @typedef {{contract?: number, version?: string, generated_at?: string, endpoints: Record<string, string|EndpointEntry>, versions?: Record<string, string>, asset_types?: AssetTypeEntry[], commands?: CommandEntry[]}} Manifest
  * @typedef {{documents: Record<string, any>, manifest: Manifest|null, warnings: string[], offline: boolean, baseUrl: string, cacheDirectory: string}} LoadedDocuments
  */
 
 /**
  * Load the named documents, refreshing them from the marketplace when
- * possible and falling back to the project cache when not.
+ * possible and falling back to the workspace cache when not.
  *
  * - The manifest is fetched first (with If-None-Match). When it cannot be
  *   reached, every document comes from the cache with an offline warning.
@@ -132,11 +165,11 @@ function describeError(error) {
  * - With neither network nor cache, RulesUnavailableError explains what to
  *   do.
  *
- * @param {{projectDirectory: string, baseUrl: string, names?: string[], fetchImpl?: typeof fetch}} options
+ * @param {{workspaceDirectory: string, baseUrl: string, names?: string[], fetchImpl?: typeof fetch}} options
  * @returns {Promise<LoadedDocuments>}
  */
-export async function loadDocuments({ projectDirectory, baseUrl, names = projectDocuments, fetchImpl = globalThis.fetch }) {
-    const cacheDirectory = join(projectDirectory, '.rafflex', 'cache', cacheKeyFor(baseUrl));
+export async function loadDocuments({ workspaceDirectory, baseUrl, names = workspaceDocuments, fetchImpl = globalThis.fetch }) {
+    const cacheDirectory = cacheDirectoryFor(workspaceDirectory, baseUrl);
     const metaPath = join(cacheDirectory, 'meta.json');
     const meta = readJson(metaPath) ?? { documents: {} };
     meta.documents ??= {};

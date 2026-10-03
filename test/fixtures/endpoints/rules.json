@@ -1,5 +1,5 @@
 {
-    "version": "af540206ecf4",
+    "version": "8262dbb1ac64",
     "sandbox": {
         "tags": [
             "if",
@@ -477,7 +477,7 @@
             "'self'",
             "'unsafe-inline'",
             "'unsafe-eval'",
-            "https://marketplace.rafflex.io.test/storage/libraries/"
+            "https://marketplace.rafflex.io.test/media/libraries/"
         ],
         "style-src": [
             "'self'",
@@ -498,7 +498,7 @@
             "https://marketplace.rafflex.io.test"
         ],
         "connect-src": [
-            "https://marketplace.rafflex.io.test",
+            "https://marketplace.rafflex.io.test/media/models/",
             "blob:"
         ],
         "frame-ancestors": [

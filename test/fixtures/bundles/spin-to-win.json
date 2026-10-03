@@ -1,0 +1,205 @@
+{
+  "format": 1,
+  "product": {
+    "slug": "spin-to-win",
+    "title": "Spin to Win",
+    "type": "game",
+    "status": "published",
+    "description": "Spin the wheel to win.",
+    "documentation": "Set the colours in the options.\n\n## Tips\n\nKeep it short.",
+    "install_notes": null,
+    "video_url": "https://video.example/spin",
+    "cover_image_url": null,
+    "screenshot_urls": [],
+    "categories": [
+      {
+        "id": 7,
+        "name": "Arcade"
+      },
+      {
+        "id": 3,
+        "name": "Wheels"
+      }
+    ],
+    "tags": [
+      "spin",
+      "arcade"
+    ],
+    "available_categories": [],
+    "visibility": "public",
+    "price": "Free",
+    "draft": {
+      "version": "1.3.0",
+      "revision": 7,
+      "channel": "stable",
+      "changelog": "Adds a blue wheel.",
+      "template": "<div class=\"spin\">{{ options.heading }}</div>\n<img src=\"{{ files['background'] }}\">\n",
+      "option_overrides": {
+        "heading": {
+          "label": "Title",
+          "help": "Shown above the wheel"
+        },
+        "colour": {
+          "choices": {
+            "red": "Red",
+            "blue": "Blue"
+          }
+        }
+      },
+      "submitted": false,
+      "submitted_at": null,
+      "suggested_version": {
+        "version": "1.3.0",
+        "bump": "minor",
+        "reason": "Option fields were added."
+      }
+    },
+    "versions": [
+      {
+        "version": "1.2.0",
+        "channel": "stable",
+        "published_at": "2026-09-01T10:00:00+00:00",
+        "template_sha256": "8ded55554bcb815cb5d366eda8e6fc81e993571b11d1c9fc361bee4c9ae0576c",
+        "option_overrides": []
+      },
+      {
+        "version": "1.0.0",
+        "channel": "stable",
+        "published_at": "2026-06-01T10:00:00+00:00",
+        "template_sha256": "808ec3438bdad90d88fe2c6be9a65eafbe2fadde5b5f129f8c4602f2d71886bc",
+        "option_overrides": []
+      }
+    ],
+    "media": [
+      {
+        "tag": "background",
+        "filename": "background.png",
+        "kind": "image",
+        "mime_type": "image/png",
+        "size_bytes": 6,
+        "sha256": "d3d2f532acb9d9c063c2758df59ad2632acc389b1d290156fe66ed04edb58a5b",
+        "dimensions": null,
+        "description": null,
+        "url": "__MEDIA_URL__/media/background.png",
+        "library": null
+      },
+      {
+        "tag": "logo",
+        "filename": "logo-final.png",
+        "kind": "image",
+        "mime_type": "image/png",
+        "size_bytes": 10,
+        "sha256": "53e758cea4dbce662532dac097ed9d587b898ff32f3c002533d66556f3ed2fae",
+        "dimensions": null,
+        "description": null,
+        "url": "__MEDIA_URL__/media/logo-final.png",
+        "library": null
+      },
+      {
+        "tag": "win-jingle",
+        "filename": "Win Jingle.mp3",
+        "kind": "audio",
+        "mime_type": "audio/mpeg",
+        "size_bytes": 9,
+        "sha256": "05786cc55616be04cbf8a6d6af823f278c3ace15fdeea945ad515bc041c618b3",
+        "dimensions": null,
+        "description": null,
+        "url": "__MEDIA_URL__/media/win-jingle.mp3",
+        "library": null
+      },
+      {
+        "tag": "three",
+        "filename": "three.module.min.js",
+        "kind": "library",
+        "mime_type": "text/javascript",
+        "size_bytes": 134,
+        "sha256": "b268382400dce35b53383f3e2e35162cf8b8ad8e14db28fc4898884336d3f0c6",
+        "dimensions": null,
+        "description": null,
+        "url": "__MEDIA_URL__/libraries/three.module.min.js",
+        "library": {
+          "name": "three.js",
+          "version": "0.0.0-test",
+          "licence": "MIT"
+        }
+      },
+      {
+        "tag": null,
+        "filename": "untagged.png",
+        "kind": "image",
+        "mime_type": "image/png",
+        "size_bytes": 6,
+        "sha256": "febe1d741b49e5a9c31526728d8c5134a803adfc4c04c4f052673722ed85597e",
+        "dimensions": null,
+        "description": null,
+        "url": "__MEDIA_URL__/media/untagged.png",
+        "library": null
+      }
+    ],
+    "latest_review": {
+      "version": "1.2.0",
+      "decision": "approved",
+      "notes": null,
+      "decided_at": "2026-08-30T10:00:00+00:00"
+    },
+    "links": {
+      "studio_url": "https://marketplace.test/studio",
+      "draft_preview_url": null,
+      "watch_url": null,
+      "frame_url": null
+    }
+  },
+  "template_source": "draft",
+  "files": {
+    "template.twig": "<div class=\"spin\">{{ options.heading }}</div>\n<img src=\"{{ files['background'] }}\">\n",
+    "options.json": "{\n  \"colour\": {\n    \"choices\": {\n      \"blue\": \"Blue\",\n      \"red\": \"Red\"\n    }\n  },\n  \"heading\": {\n    \"help\": \"Shown above the wheel\",\n    \"label\": \"Title\"\n  }\n}\n",
+    "listing.md": "---\ncategory_ids: [3, 7]\ntag_names: [\"arcade\", \"spin\"]\nvideo_url: \"https://video.example/spin\"\n---\n\n## Description\n\nSpin the wheel to win.\n\n## Documentation\n\nSet the colours in the options.\n\n## Tips\n\nKeep it short.\n\n## Install notes\n\n\n",
+    "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\nAdds a blue wheel.\n\n## 1.2.0 (2026-09-01)\n\nFaster spins.\n\n## 1.0.0 (2026-06-01)\n\nFirst release.\n"
+  },
+  "media": [
+    {
+      "tag": "background",
+      "filename": "background.png",
+      "url": "__MEDIA_URL__/media/background.png",
+      "sha256": "d3d2f532acb9d9c063c2758df59ad2632acc389b1d290156fe66ed04edb58a5b",
+      "kind": "image",
+      "library": null
+    },
+    {
+      "tag": "logo",
+      "filename": "logo-final.png",
+      "url": "__MEDIA_URL__/media/logo-final.png",
+      "sha256": "53e758cea4dbce662532dac097ed9d587b898ff32f3c002533d66556f3ed2fae",
+      "kind": "image",
+      "library": null
+    },
+    {
+      "tag": "win-jingle",
+      "filename": "Win Jingle.mp3",
+      "url": "__MEDIA_URL__/media/win-jingle.mp3",
+      "sha256": "05786cc55616be04cbf8a6d6af823f278c3ace15fdeea945ad515bc041c618b3",
+      "kind": "audio",
+      "library": null
+    },
+    {
+      "tag": "three",
+      "filename": "three.module.min.js",
+      "url": "__MEDIA_URL__/libraries/three.module.min.js",
+      "sha256": "b268382400dce35b53383f3e2e35162cf8b8ad8e14db28fc4898884336d3f0c6",
+      "kind": "library",
+      "library": {
+        "name": "three.js",
+        "version": "0.0.0-test",
+        "licence": "MIT"
+      }
+    },
+    {
+      "tag": null,
+      "filename": "untagged.png",
+      "url": "__MEDIA_URL__/media/untagged.png",
+      "sha256": "febe1d741b49e5a9c31526728d8c5134a803adfc4c04c4f052673722ed85597e",
+      "kind": "image",
+      "library": null
+    }
+  ]
+}

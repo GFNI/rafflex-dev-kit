@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { startDevServer } from '../dev-server.js';
-import { loadProject } from '../project.js';
-import { loadDocuments, resolveBaseUrl } from '../remote.js';
+import { loadDocuments } from '../remote.js';
+import { listProducts, loadWorkspace, productContaining, resolveProduct, withManifest } from '../workspace.js';
+import { fail, messageOf, writeJson } from './output.js';
 
 export const defaultPort = 5173;
 
@@ -29,36 +30,53 @@ function openBrowser(url) {
 }
 
 /**
- * The default command: start the preview server, open the browser, and
- * keep running until interrupted. Returns null once the server is up (the
- * process stays alive), or an exit code when it cannot start.
+ * The default command: start one preview server for the whole workspace,
+ * open the browser, and keep running until interrupted. Returns null once
+ * the server is up (the process stays alive), or an exit code when it
+ * cannot start.
  *
- * @param {{cwd: string, stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream, options: import('../cli.js').CliOptions}} context
+ * The browser opens on the product named, or the product folder the
+ * command runs in; anywhere else in the workspace it opens the index.
+ *
+ * @param {import('../cli.js').CommandContext} context
  * @returns {Promise<number|null>}
  */
-export async function runDevCommand({ cwd, stdout, stderr, options }) {
-    let project;
+export async function runDevCommand(context) {
+    const { cwd, stdout, stderr, options } = context;
+    let workspace;
+    let product;
     let loaded;
 
     try {
-        project = loadProject(cwd);
-        loaded = await loadDocuments({ projectDirectory: project.directory, baseUrl: resolveBaseUrl(project.config) });
+        workspace = loadWorkspace(cwd);
+        loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl });
+        workspace = withManifest(workspace, loaded.manifest);
+
+        const products = listProducts(workspace);
+        const [name] = options.positionals;
+
+        product = name !== undefined ? resolveProduct(workspace, products, name, cwd) : productContaining(products, cwd);
     } catch (error) {
-        stderr.write(`${/** @type {Error} */ (error).message}\n`);
-
-        return 2;
+        return fail(context, messageOf(error), 2);
     }
 
-    for (const warning of loaded.warnings) {
-        stderr.write(`note: ${warning}\n`);
+    const server = await startDevServer({ workspace, loaded, port: options.port ?? defaultPort });
+    const openUrl = product === null ? server.url : server.urlFor(product);
+
+    if (options.json) {
+        writeJson(stdout, { url: openUrl, index_url: server.url, product: product?.path ?? null, warnings: loaded.warnings });
+    } else {
+        for (const warning of loaded.warnings) {
+            stderr.write(`note: ${warning}\n`);
+        }
+
+        const what = product === null ? `Workspace ${workspace.root}` : `Previewing ${product.path} (${product.type} ${product.version})`;
+
+        stdout.write(`${what} at ${openUrl}\n${product === null ? '' : `Every product: ${server.url}\n`}Rules ${loaded.documents.rules.version ?? 'unversioned'} from ${loaded.baseUrl}. Save a template, options.json, or anything in assets/ to reload.\nThe marketplace's own check is the final verdict. Press Ctrl+C to stop.\n`);
     }
-
-    const server = await startDevServer({ project, loaded, port: options.port ?? defaultPort });
-
-    stdout.write(`Previewing ${project.config.type} at ${server.url}\nRules ${loaded.documents.rules.version ?? 'unversioned'} from ${loaded.baseUrl}. Save template.twig or anything in assets/ to reload.\nThe marketplace's own check is the final verdict. Press Ctrl+C to stop.\n`);
 
     if (options.open) {
-        openBrowser(server.url);
+        openBrowser(openUrl);
     }
 
     const stop = () => {

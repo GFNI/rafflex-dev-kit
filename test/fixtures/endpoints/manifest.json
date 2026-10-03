@@ -1,6 +1,7 @@
 {
-    "version": "224645977332",
-    "generated_at": "2026-10-02T21:05:05+00:00",
+    "contract": 1,
+    "version": "c6f6aab4e55c",
+    "generated_at": "2026-10-02T22:30:36+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
@@ -9,10 +10,84 @@
         "fixtures": "__BASE_URL__/dev-kit/fixtures.json"
     },
     "versions": {
-        "rules": "af540206ecf4",
+        "rules": "8262dbb1ac64",
         "contexts": "cbf0c3ba030a",
-        "skeletons": "7293b372ca3a",
-        "libraries": "767969e7fbfc",
-        "fixtures": "a279b471bc1e"
-    }
+        "skeletons": "9fe4564c514a",
+        "libraries": "c052391c893d",
+        "fixtures": "744e2c3c4f86"
+    },
+    "asset_types": [
+        {
+            "value": "game",
+            "folder": "games",
+            "label": "Game"
+        },
+        {
+            "value": "block",
+            "folder": "blocks",
+            "label": "Block"
+        }
+    ],
+    "commands": [
+        {
+            "name": "init",
+            "usage": "npx @rafflex/dev init",
+            "summary": "Creates the workspace in the current folder, and refuses inside an existing one.",
+            "json": true
+        },
+        {
+            "name": "new",
+            "usage": "npx @rafflex/dev new <game|block> \"<title>\"",
+            "summary": "Adds a product folder from the type's starter skeleton at version 1.0.0.",
+            "json": true
+        },
+        {
+            "name": "import",
+            "usage": "npx @rafflex/dev import <bundle>",
+            "summary": "Unpacks a product export bundle into its type folder, or refreshes an existing folder.",
+            "json": true
+        },
+        {
+            "name": "dev",
+            "usage": "npx @rafflex/dev",
+            "summary": "Starts the preview server on the workspace index, with live reload and the problems overlay.",
+            "json": true
+        },
+        {
+            "name": "check",
+            "usage": "npx @rafflex/dev check [<product>...|--all]",
+            "summary": "Runs the platform's rules on the named products, or on every product with --all.",
+            "json": true
+        },
+        {
+            "name": "status",
+            "usage": "npx @rafflex/dev status [<product>]",
+            "summary": "Shows each product's local and live versions, review state, and what changed since the last push.",
+            "json": true
+        },
+        {
+            "name": "plan",
+            "usage": "npx @rafflex/dev plan <product>",
+            "summary": "Lists exactly what to push as data: template, options, listing, assets, and release notes.",
+            "json": true
+        },
+        {
+            "name": "synced",
+            "usage": "npx @rafflex/dev synced <product>",
+            "summary": "Records a get_product result read from standard input as the product's last known remote state.",
+            "json": true
+        },
+        {
+            "name": "release",
+            "usage": "npx @rafflex/dev release <product>",
+            "summary": "Closes the Unreleased changelog section after submit_for_review succeeds, and tags the version.",
+            "json": true
+        },
+        {
+            "name": "version",
+            "usage": "npx @rafflex/dev version <product> <patch|minor|major|x.y.z>",
+            "summary": "Sets the next version, and is refused while the current version is in review.",
+            "json": true
+        }
+    ]
 }

@@ -1,52 +1,51 @@
 /**
  * The local preview frame: the template rendered into a document served
- * under the platform's preview CSP (rules.preview_csp), with the
- * marketplace's uploads origin mapped to the local server so the
- * project's assets load, and nothing else widened. Approved library
- * builds keep their shared URLs in script-src, so the preview runs the
- * same bytes the live site does.
+ * under the platform's preview CSP (rules.preview_csp), with every
+ * platform media source mapped to the product's local assets path so its
+ * files load, and nothing else widened. Approved library builds keep
+ * their shared marketplace URLs, so the preview runs the same bytes the
+ * live site does.
  */
 
 const keywordSource = /^(?:'[^']*'|[a-z][a-z0-9+.-]*:)$/i;
 
 /**
- * Map the published preview CSP onto the local server: every http(s)
- * source becomes the local origin, except script-src sources that are a
- * prefix of an approved library URL (the shared libraries path), which
- * stay as published. Each approved library URL is listed in script-src
- * as well, so a build loads even where the published policy has no
- * libraries path.
+ * Map the published preview CSP onto the local server, directive by
+ * directive, so a template that passes one passes the other:
+ *
+ * - keyword and scheme sources ('self', 'none', data:, blob:) and the
+ *   sandbox flags stay as published;
+ * - script-src http(s) sources stay as published: the only scripts a
+ *   template loads are approved library builds, which the kit resolves
+ *   to their shared marketplace URLs (the published libraries path), and
+ *   the kit never serves a script from a product's assets folder;
+ * - every other http(s) source, whether a bare origin (the uploads
+ *   origin in img-src and media-src) or an origin with a path (the
+ *   models path in connect-src), is a place the platform serves the
+ *   product's own media from, and maps to the product's local assets
+ *   path. A path source maps path for path, so it never widens to the
+ *   local origin.
  *
  * @param {Record<string, string[]>} previewCsp
- * @param {string} localOrigin e.g. http://127.0.0.1:5173
- * @param {string[]} libraryUrls
+ * @param {string} localAssetsPath the product's assets URL, e.g. http://127.0.0.1:5173/p/games/spin-to-win/assets/
  * @returns {Record<string, string[]>}
  */
-export function localCspDirectives(previewCsp, localOrigin, libraryUrls) {
+export function localCspDirectives(previewCsp, localAssetsPath) {
     /** @type {Record<string, string[]>} */
     const directives = {};
 
     for (const [directive, sources] of Object.entries(previewCsp)) {
-        /** @type {string[]} */
-        const mapped = [];
-
-        for (const source of sources) {
+        const mapped = sources.map((source) => {
             if (directive === 'sandbox' || keywordSource.test(source) || !/^https?:\/\//i.test(source)) {
-                mapped.push(source);
-                continue;
+                return source;
             }
 
-            if (directive === 'script-src' && libraryUrls.some((url) => url.startsWith(source))) {
-                mapped.push(source);
-                continue;
+            if (directive === 'script-src') {
+                return source;
             }
 
-            mapped.push(localOrigin);
-        }
-
-        if (directive === 'script-src') {
-            mapped.push(localOrigin, ...libraryUrls);
-        }
+            return localAssetsPath;
+        });
 
         directives[directive] = [...new Set(mapped)];
     }

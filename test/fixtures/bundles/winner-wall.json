@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "product": {
+    "slug": "winner-wall",
+    "title": "Winner Wall",
+    "type": "block",
+    "status": "published",
+    "description": "Shows recent winners.",
+    "documentation": null,
+    "install_notes": "Place it under the competition.",
+    "video_url": null,
+    "cover_image_url": null,
+    "screenshot_urls": [],
+    "categories": [],
+    "tags": [],
+    "available_categories": [],
+    "visibility": "public",
+    "price": "Free",
+    "draft": null,
+    "versions": [
+      {
+        "version": "1.0.0",
+        "channel": "stable",
+        "published_at": "2026-09-10T10:00:00+00:00",
+        "template_sha256": "621b86ed3e1601eb764524e21256b649bd33c80e62a33571f74464e76bc0308a",
+        "option_overrides": []
+      }
+    ],
+    "media": [
+      {
+        "tag": "wall",
+        "filename": "wall.png",
+        "kind": "image",
+        "mime_type": "image/png",
+        "size_bytes": 8,
+        "sha256": "50158738d944728c57e897512fccdc403a2e10d1ec1e0ccf448d30abffe3a77e",
+        "dimensions": null,
+        "description": null,
+        "url": "__MEDIA_URL__/media/wall.png",
+        "library": null
+      }
+    ],
+    "latest_review": {
+      "version": "1.0.0",
+      "decision": "approved",
+      "notes": null,
+      "decided_at": "2026-09-09T10:00:00+00:00"
+    },
+    "links": {
+      "studio_url": "https://marketplace.test/studio",
+      "draft_preview_url": null,
+      "watch_url": null,
+      "frame_url": null
+    }
+  },
+  "template_source": "live",
+  "files": {
+    "template.twig": "<ul class=\"wall\">{% for winner in winners %}<li>{{ winner.name }}</li>{% endfor %}</ul>\n",
+    "options.json": "{}\n",
+    "listing.md": "---\ncategory_ids: []\ntag_names: []\nvideo_url: \"\"\n---\n\n## Description\n\nShows recent winners.\n\n## Documentation\n\n\n\n## Install notes\n\nPlace it under the competition.\n",
+    "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n\n\n## 1.0.0 (2026-09-10)\n\nFirst release.\n"
+  },
+  "media": [
+    {
+      "tag": "wall",
+      "filename": "wall.png",
+      "url": "__MEDIA_URL__/media/wall.png",
+      "sha256": "50158738d944728c57e897512fccdc403a2e10d1ec1e0ccf448d30abffe3a77e",
+      "kind": "image",
+      "library": null
+    }
+  ]
+}
