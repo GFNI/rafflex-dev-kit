@@ -1,5 +1,5 @@
 {
-    "version": "35356c4e0a40",
+    "version": "3218c80a3f7f",
     "placeholders": [
         "title",
         "path",
@@ -39,7 +39,7 @@
         "revert": {
             "title": "Go back to an earlier version",
             "description": "Your AI brings back a version you published before.",
-            "text": "Take {title} back to an earlier version I published on the marketplace. List its published versions and ask me which one I want.\n\nThen call `revert_to_version` with that version, call `export_product`, and bring the result into {path} with `npx @rafflex/dev import`. Run `npx @rafflex/dev verify {path}` and tell me what changed."
+            "text": "Take {title} back to an earlier version I published on the marketplace. List its published versions and ask me which one I want.\n\nThen call `revert_to_version` with that version, call `export_product`, commit anything uncommitted in {path}, and bring the result into it with `npx @rafflex/dev import \"<bundle_url>\" --force`, quoting the bundle_url export_product gave you. Run `npx @rafflex/dev verify {path}` and tell me what changed."
         },
         "hand_to_ai": {
             "title": "Hand it to your AI",

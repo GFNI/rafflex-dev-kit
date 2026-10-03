@@ -1,5 +1,5 @@
 {
-    "version": "e7e71953ec6d",
+    "version": "971e0e729152",
     "sandbox": {
         "tags": [
             "if",
@@ -657,6 +657,7 @@
         "max_label_length": 60,
         "max_help_length": 200,
         "max_choices": 20,
+        "max_choices_length": 2000,
         "violation_message": "In the option labels: :violation"
     }
 }
