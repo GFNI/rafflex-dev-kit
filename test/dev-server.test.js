@@ -6,7 +6,7 @@ import { after, before, describe, test } from 'node:test';
 import { startDevServer } from '../src/dev-server.js';
 import { frameDocument, localCspDirectives } from '../src/preview.js';
 import { loadWorkspace, selectProduct } from '../src/workspace.js';
-import { fixtureDocuments, glbBuffer, temporaryProduct } from './helpers/project.js';
+import { fixtureDocuments, glbBuffer, stubPrompts, temporaryProduct } from './helpers/project.js';
 
 const documents = fixtureDocuments();
 const libraryBytes = readFileSync(new URL('./fixtures/lib/fake-three.module.js', import.meta.url));
@@ -100,7 +100,7 @@ describe('dev server', () => {
         });
         const workspace = loadWorkspace(directory);
 
-        server = await startDevServer({ workspace, loaded: { documents, warnings: ['a warning'], offline: false, baseUrl: 'https://marketplace.rafflex.io', manifest: null, cacheDirectory: '' }, port: 0 });
+        server = await startDevServer({ workspace, loaded: { documents, warnings: ['a warning'], offline: false, baseUrl: 'https://marketplace.rafflex.io', manifest: null, cacheDirectory: '' }, port: 0, prompts: stubPrompts(), detect: () => [] });
         productUrl = server.urlFor(selectProduct(workspace, undefined, directory));
     });
 
@@ -111,7 +111,7 @@ describe('dev server', () => {
 
         assert.equal(productUrl, `${server.url}p/games/spin-to-win/`);
         assert.equal(page.status, 200);
-        assert.match(page.body, /<iframe id="preview" title="Template preview" sandbox="allow-scripts">/);
+        assert.match(page.body, /<iframe title="Preview" sandbox="allow-scripts" :src="frameUrl"><\/iframe>/);
     });
 
     test('renders the frame for a scenario and play count under the mapped preview CSP', async () => {

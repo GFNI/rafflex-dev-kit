@@ -61,6 +61,13 @@ $documents = [
     'fixtures' => $contract->fixtures(),
 ];
 
+// The app's prompts (PRD 42), with the marketplace's own address swapped
+// for the placeholder the fixture server fills, like the endpoint URLs.
+if (method_exists($contract, 'prompts')) {
+    $promptsJson = json_encode($contract->prompts(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $documents['prompts'] = json_decode(str_replace(rtrim(url('/'), '/'), '__BASE_URL__', $promptsJson), true, flags: JSON_THROW_ON_ERROR);
+}
+
 $endpoints = [];
 $versions = [];
 

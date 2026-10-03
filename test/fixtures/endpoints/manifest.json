@@ -1,20 +1,22 @@
 {
     "contract": 1,
-    "version": "7f550c69a11b",
-    "generated_at": "2026-10-03T10:28:19+00:00",
+    "version": "72ab368548a6",
+    "generated_at": "2026-10-03T10:34:13+00:00",
     "endpoints": {
         "rules": "__BASE_URL__/dev-kit/rules.json",
         "contexts": "__BASE_URL__/dev-kit/contexts.json",
         "skeletons": "__BASE_URL__/dev-kit/skeletons.json",
         "libraries": "__BASE_URL__/dev-kit/libraries.json",
-        "fixtures": "__BASE_URL__/dev-kit/fixtures.json"
+        "fixtures": "__BASE_URL__/dev-kit/fixtures.json",
+        "prompts": "__BASE_URL__/dev-kit/prompts.json"
     },
     "versions": {
         "rules": "bc13b4388267",
         "contexts": "f53ed4ad5d7e",
-        "skeletons": "a58d93471afb",
+        "skeletons": "fbffa839ba57",
         "libraries": "c052391c893d",
-        "fixtures": "744e2c3c4f86"
+        "fixtures": "744e2c3c4f86",
+        "prompts": "214df3e2ae5c"
     },
     "asset_types": [
         {
@@ -50,7 +52,7 @@
         {
             "name": "dev",
             "usage": "npx @rafflex/dev",
-            "summary": "Starts the preview server on the workspace index, with live reload and the problems overlay.",
+            "summary": "Starts the Rafflex app on this workspace: products, previews, tests, and prompts, with live updates. Outside a workspace it sets one up in a new rafflex folder first.",
             "json": true
         },
         {

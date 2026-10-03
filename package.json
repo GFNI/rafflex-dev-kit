@@ -39,6 +39,7 @@
     "access": "public"
   },
   "devDependencies": {
+    "heroicons": "2.2.0",
     "playwright-core": "1.63.0"
   }
 }

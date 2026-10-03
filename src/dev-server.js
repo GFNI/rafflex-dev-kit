@@ -1,13 +1,22 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync, watch } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, relative, resolve, sep } from 'node:path';
+import { createProduct, isInside, openFolder, testRunner } from './app/actions.js';
+import { detectClients } from './app/clients.js';
+import { productPrompts, productState, publishStep, testSummary } from './app/product-state.js';
+import { promptSource } from './app/prompts.js';
+import { imageExtensions, readLastResult, resultsDirectoryName } from './app/results.js';
 import { scanAssets } from './assets.js';
 import { nonBlockingCodes, runChecks, scenarioValues, verdictNote } from './checker.js';
 import { qualityIssues } from './quality.js';
+import { unreleasedNotes } from './commands/release.js';
 import { productStatus } from './commands/status.js';
 import { blockContext, gameContext } from './context.js';
+import { isGitInstalled, isInsideRepository } from './git.js';
 import { cspHeader, frameDocument, localCspDirectives } from './preview.js';
+import { kitVersion } from './version.js';
 import { assetsDirectoryName, listProducts, optionsFilename, productFilename, readProduct, readTemplate, templateFilename } from './workspace.js';
 import { renderTemplate } from './twig-engine.js';
 
@@ -33,7 +42,38 @@ const contentTypes = {
 };
 
 /** The client files served from /__rafflex/. */
-const clientFiles = ['app.js', 'app.css', 'workspace.js'];
+const clientFiles = ['app.js', 'app.css'];
+
+/** The app's pages: each serves the single page app, which routes on the path. */
+const appPages = ['/', '/products', '/new'];
+
+/** A product's test screenshots are served under /p/<type folder>/<folder>/results/. */
+const resultsRoutePrefix = 'results/';
+
+/** The header every action request carries the start token in. */
+export const tokenHeader = 'x-rafflex-token';
+
+/** The largest action request body the app reads. */
+const maxBodyBytes = 16 * 1024;
+
+/** The app page's own CSP: Alpine evaluates its directives, so it needs eval; nothing else is allowed. */
+const appCsp = `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+
+/** An icon marker in app.html: "<!-- icon:micro/check -->". */
+const iconMarker = /<!-- icon:([a-z]+)\/([a-z0-9-]+) -->/g;
+
+/**
+ * Inlines the bundled Heroicons into the app page in place of their markers,
+ * so icons render offline under the page's CSP. A marker without a bundled
+ * icon is an error, caught by the app's tests.
+ *
+ * @param {string} html
+ */
+export function inlineIcons(html) {
+    return html.replace(iconMarker, (marker, variant, name) => readFileSync(new URL(`icons/${variant}/${name}.svg`, clientDirectory), 'utf8')
+        .trim()
+        .replace('<svg ', `<svg class="icon icon-${variant}" `));
+}
 
 /** Files whose change reloads a product's preview. */
 const previewFiles = [templateFilename, optionsFilename, productFilename];
@@ -338,6 +378,11 @@ export function productSummary(product, documents) {
  * @property {string} [host]
  * @property {boolean} [watchFiles]
  * @property {boolean} [pollFiles]   Poll instead of fs.watch (tests).
+ * @property {string} [token]         The action token (random by default).
+ * @property {ReturnType<typeof promptSource>} [prompts] Where prompts.json comes from.
+ * @property {() => string[]} [detect] Which AI apps are on this computer.
+ * @property {{command?: string, env?: NodeJS.ProcessEnv}} [tests] How tests run (tests of the app).
+ * @property {(directory: string) => boolean} [openFolderImpl]
  */
 
 /**
@@ -355,14 +400,56 @@ export function productSummary(product, documents) {
  * own host name only.
  *
  * @param {DevServerOptions} options
- * @returns {Promise<{url: string, port: number, urlFor: (product: {path: string}) => string, close: () => Promise<void>, notifyChange: (change?: WorkspaceChange) => void}>}
+ * @returns {Promise<{url: string, port: number, token: string, urlFor: (product: {path: string}) => string, close: () => Promise<void>, notifyChange: (change?: WorkspaceChange) => void}>}
  */
-export async function startDevServer({ workspace, loaded, port, host = '127.0.0.1', watchFiles = true, pollFiles = false }) {
+export async function startDevServer({
+    workspace,
+    loaded,
+    port,
+    host = '127.0.0.1',
+    watchFiles = true,
+    pollFiles = false,
+    token = randomBytes(24).toString('hex'),
+    prompts = promptSource({ workspaceDirectory: workspace.root, baseUrl: loaded.baseUrl }),
+    detect = () => detectClients(),
+    tests = {},
+    openFolderImpl = (directory) => openFolder(directory),
+}) {
     const { documents } = loaded;
     /** @type {Map<import('node:http').ServerResponse, string|null>} Each listener's product path, or null for the index. */
     const listeners = new Map();
     let actualPort = port;
     let origin = `http://${host}:${port}`;
+    const detectedClients = detect();
+    const git = { installed: isGitInstalled(workspace.root), repository: isInsideRepository(workspace.root) };
+    /** @type {Map<string, import('./app/results.js').TestResult>} */
+    const finishedRuns = new Map();
+    const runner = testRunner({
+        workspaceRoot: workspace.root,
+        ...(tests.command ? { command: tests.command } : {}),
+        ...(tests.env ? { env: tests.env } : {}),
+        onEvent: (event) => {
+            if (event.result !== undefined) {
+                finishedRuns.set(event.product, event.result);
+            }
+
+            broadcast('test', event);
+        },
+    });
+
+    /**
+     * Send an event to every open app page.
+     *
+     * @param {string} event
+     * @param {unknown} data
+     */
+    const broadcast = (event, data) => {
+        for (const [listener, productPath] of listeners) {
+            if (productPath === null) {
+                listener.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+            }
+        }
+    };
 
     /**
      * The product a /p/ route names, read fresh so title and version edits
@@ -380,7 +467,9 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
             return null;
         }
 
-        if (!existsSync(join(workspace.root, assetType.folder, folder, productFilename))) {
+        const directory = join(workspace.root, assetType.folder, folder);
+
+        if (!existsSync(join(directory, productFilename)) || !isInside(workspace.root, directory)) {
             return null;
         }
 
@@ -390,7 +479,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
     /**
      * @param {import('./workspace.js').Product} product
      */
-    const productState = (product) => {
+    const productFiles = (product) => {
         const template = readTemplate(product);
         const basePath = productBasePath(product);
         const scan = scanAssets(product.assetsDirectory, documents.rules, documents.libraries?.libraries ?? [], (path) => assetUrl(path, basePath));
@@ -457,7 +546,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
      */
     const serveFrame = (product, url, response) => {
         const { scenario, playCount } = selectionFrom(url);
-        const { template, scan } = productState(product);
+        const { template, scan } = productFiles(product);
         const context = product.type === 'block'
             ? blockContext(documents.contexts, { files: scan.files, template })
             : gameContext(documents.contexts, { scenario, playCount, files: scan.files, template });
@@ -487,7 +576,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
         let payload;
 
         try {
-            const { template, scan } = productState(product);
+            const { template, scan } = productFiles(product);
             const { issues, skippedPatterns } = runChecks({
                 template,
                 files: scan.files,
@@ -539,7 +628,8 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
     /**
      * @param {import('node:http').ServerResponse} response
      */
-    const serveProducts = (response) => {
+    const serveProducts = async (response) => {
+        const { document } = await prompts.get();
         /** @type {ReturnType<typeof productSummary>[]} */
         const products = [];
         /** @type {string[]} */
@@ -547,7 +637,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
 
         try {
             for (const product of listProducts(workspace)) {
-                products.push(productSummary(product, documents));
+                products.push(appSummary(product, document));
             }
         } catch (error) {
             errors.push(String(/** @type {Error} */ (error).message));
@@ -564,25 +654,246 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
     };
 
     /**
+     * A product's summary for the app: the index summary plus its state,
+     * last test result, and folder.
+     *
+     * @param {import('./workspace.js').Product} product
+     * @param {import('./app/prompts.js').PromptsDocument|null} promptsDocument
+     */
+    const appSummary = (product, promptsDocument) => {
+        const summary = productSummary(product, documents);
+        const result = readLastResult(product.directory);
+
+        return {
+            ...summary,
+            directory: product.directory,
+            state: productState(summary),
+            test: { ...testSummary(result), at: result?.at ?? null, running: runner.isRunning(product.path) },
+            hand_to_ai: productPrompts(summary, result, promptsDocument).hand_to_ai?.text ?? null,
+        };
+    };
+
+    /**
+     * Everything the product view shows: the summary, the last test
+     * result, Get it live, the prompts, and the Unreleased notes.
+     *
+     * @param {import('./workspace.js').Product} product
+     * @param {import('node:http').ServerResponse} response
+     */
+    const serveProductDetail = async (product, response) => {
+        const summary = productSummary(product, documents);
+        const result = readLastResult(product.directory) ?? finishedRuns.get(product.path) ?? null;
+        const { document } = await prompts.get();
+        let changelog = null;
+
+        try {
+            changelog = unreleasedNotes(readFileSync(product.changelogPath, 'utf8'));
+        } catch {
+            // No changelog yet.
+        }
+
+        sendJson(response, {
+            ...summary,
+            directory: product.directory,
+            state: productState(summary),
+            test: { ...testSummary(result), running: runner.isRunning(product.path), lines: runner.linesOf(product.path), command: runner.command },
+            result,
+            publish: publishStep(summary, result, document),
+            prompts: productPrompts(summary, result, document),
+            changelog,
+            scenarios: documents.contexts.scenarios ?? [],
+            play_count: documents.contexts.play_count ?? { min: 1, max: 25, default: 5 },
+        });
+    };
+
+    /**
+     * Home: the Get started prompt, the AI apps on this computer with
+     * their connect commands, and the health strip.
+     *
+     * @param {URL} url
+     * @param {import('node:http').ServerResponse} response
+     */
+    const serveHome = async (url, response) => {
+        const { document, error } = await prompts.get({ force: url.searchParams.has('refresh') });
+        const getStarted = document?.prompts?.get_started ?? null;
+        const clients = (document?.clients ?? []).map((client) => ({ ...client, detected: detectedClients.includes(client.key) }));
+        const staleRules = loaded.warnings.some((warning) => /older than the marketplace/.test(warning));
+        const health = [
+            loaded.offline || staleRules
+                ? { key: 'rules', ok: false, label: 'Using saved platform rules', fix: 'Connect to the internet, then close and start the app again.' }
+                : { key: 'rules', ok: true, label: 'Platform rules are current', fix: null },
+            { key: 'kit', ok: true, label: `Kit ${kitVersion}`, fix: null },
+            !git.installed
+                ? { key: 'git', ok: false, label: 'git is missing', fix: 'Install git from git-scm.com so every change can be undone.' }
+                : git.repository
+                    ? { key: 'git', ok: true, label: 'git is on', fix: null }
+                    : { key: 'git', ok: false, label: 'No history yet', fix: 'Ask your AI to turn on git in this workspace.' },
+            ...(document === null ? [{ key: 'prompts', ok: false, label: 'Prompts did not load', fix: 'Connect to the internet, then reload this page.' }] : []),
+        ];
+
+        sendJson(response, {
+            workspace: workspace.root,
+            kit_version: kitVersion,
+            types: workspace.assetTypes,
+            get_started: getStarted === null ? null : { text: String(getStarted.text ?? ''), description: String(getStarted.description ?? '') },
+            new_product: {
+                build: document?.prompts?.new_product?.text ?? null,
+                ai_start: document?.prompts?.new_product_ai_start?.text ?? null,
+            },
+            clients,
+            links: document?.links ?? {},
+            prompts_error: error,
+            health,
+        });
+    };
+
+    /**
+     * @param {import('node:http').IncomingMessage} request
+     * @returns {Promise<any>}
+     */
+    const readBody = (request) => new Promise((resolveBody, reject) => {
+        let body = '';
+
+        request.setEncoding('utf8');
+        request.on('data', (chunk) => {
+            body += chunk;
+
+            if (body.length > maxBodyBytes) {
+                reject(new Error('Too large'));
+                request.destroy();
+            }
+        });
+        request.on('end', () => {
+            try {
+                resolveBody(body === '' ? {} : JSON.parse(body));
+            } catch {
+                reject(new Error('Not JSON'));
+            }
+        });
+        request.on('error', reject);
+    });
+
+    /**
+     * Whether an action request is the app's own: it carries the start
+     * token, is JSON (so a plain cross site form cannot send it), and comes
+     * from the app's own origin when the browser says where it came from.
+     *
+     * @param {import('node:http').IncomingMessage} request
+     */
+    const isAuthorisedAction = (request) => {
+        const given = Buffer.from(String(request.headers[tokenHeader] ?? ''));
+        const expected = Buffer.from(token);
+        const requestOrigin = request.headers.origin;
+
+        if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+            return false;
+        }
+
+        if (!String(request.headers['content-type'] ?? '').startsWith('application/json')) {
+            return false;
+        }
+
+        return requestOrigin === undefined || requestOrigin === origin || requestOrigin === `http://localhost:${actualPort}`;
+    };
+
+    /**
+     * @param {import('node:http').IncomingMessage} request
+     * @param {import('node:http').ServerResponse} response
+     */
+    const serveNewProduct = async (request, response) => {
+        let body;
+
+        try {
+            body = await readBody(request);
+        } catch {
+            send(response, 400, 'Bad request');
+
+            return;
+        }
+
+        const type = typeof body.type === 'string' ? body.type : '';
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+
+        if (!workspace.assetTypes.some((assetType) => assetType.value === type) || title === '' || title.length > 120) {
+            send(response, 422, JSON.stringify({ error: 'Give it a name and choose game or block.' }), { 'Content-Type': 'application/json; charset=utf-8' });
+
+            return;
+        }
+
+        const { code, output } = await createProduct(workspace.root, type, title);
+
+        if (code !== 0) {
+            send(response, 422, JSON.stringify({ error: output.error ?? 'The product could not be created.' }), { 'Content-Type': 'application/json; charset=utf-8' });
+
+            return;
+        }
+
+        notifyChange({ type: 'products' });
+        sendJson(response, { product: output.product, url: `${productRoutePrefix}${String(output.product).split('/').map(encodeURIComponent).join('/')}/` });
+    };
+
+    /**
+     * @param {import('./workspace.js').Product} product
+     * @param {string} action
+     * @param {import('node:http').ServerResponse} response
+     */
+    const serveProductAction = (product, action, response) => {
+        if (!isInside(workspace.root, product.directory)) {
+            send(response, 404, 'Not found');
+
+            return;
+        }
+
+        switch (action) {
+            case 'test':
+                if (!runner.start(product)) {
+                    send(response, 409, JSON.stringify({ error: 'A test is already running for this product.' }), { 'Content-Type': 'application/json; charset=utf-8' });
+
+                    return;
+                }
+
+                send(response, 202, JSON.stringify({ started: true, command: runner.command }), { 'Content-Type': 'application/json; charset=utf-8' });
+
+                return;
+            case 'open-folder':
+                sendJson(response, { opened: openFolderImpl(product.directory) });
+
+                return;
+            default:
+                send(response, 404, 'Not found');
+        }
+    };
+
+    /**
+     * A screenshot or other image from the product's `.results/` folder.
+     *
+     * @param {import('./workspace.js').Product} product
+     * @param {string} rawPath
+     * @param {import('node:http').ServerResponse} response
+     */
+    const serveResult = (product, rawPath, response) => {
+        const resultsRoot = join(product.directory, resultsDirectoryName);
+        const path = confinedPath(resultsRoot, rawPath, { allowHidden: false });
+
+        if (path === null || !imageExtensions.includes(extname(path).toLowerCase())) {
+            send(response, 404, 'Not found');
+
+            return;
+        }
+
+        response.writeHead(200, { 'Content-Type': contentTypes[extname(path).toLowerCase()] ?? 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        createReadStream(path).pipe(response);
+    };
+
+    /**
      * @param {import('./workspace.js').Product} product
      * @param {string} rawPath The URL encoded path below assets/.
      * @param {import('node:http').ServerResponse} response
      */
     const serveAsset = (product, rawPath, response) => {
-        const assetsRoot = resolve(product.assetsDirectory);
-        let decoded;
+        const path = confinedPath(product.assetsDirectory, rawPath, { allowHidden: false });
 
-        try {
-            decoded = decodeURIComponent(rawPath);
-        } catch {
-            send(response, 400, 'Bad path');
-
-            return;
-        }
-
-        const path = resolve(assetsRoot, decoded);
-
-        if (!path.startsWith(`${assetsRoot}${sep}`) || relative(assetsRoot, path).split(sep).some((part) => part.startsWith('.')) || !existsSync(path) || !statSync(path).isFile()) {
+        if (path === null) {
             send(response, 404, 'Not found');
 
             return;
@@ -604,11 +915,16 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
      * @param {import('node:http').ServerResponse} response
      */
     const serveClient = (name, response) => {
-        const body = readFileSync(new URL(name, clientDirectory), 'utf8');
+        let body = readFileSync(new URL(name, clientDirectory), 'utf8');
+
+        if (name === 'app.html') {
+            body = inlineIcons(body.replace('__RAFFLEX_TOKEN__', token));
+        }
 
         send(response, 200, body, {
             'Content-Type': contentTypes[extname(name)] ?? 'text/plain; charset=utf-8',
-            'Content-Security-Policy': `default-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+            'Content-Security-Policy': appCsp,
+            'Referrer-Policy': 'no-referrer',
         });
     };
 
@@ -625,9 +941,10 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
 
     /**
      * @param {URL} url
+     * @param {import('node:http').IncomingMessage} request
      * @param {import('node:http').ServerResponse} response
      */
-    const serveProductRoute = (url, response) => {
+    const serveProductRoute = async (url, request, response) => {
         const segments = url.pathname.slice(productRoutePrefix.length).split('/');
 
         if (segments.length < 2) {
@@ -665,9 +982,37 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
 
         const rest = segments.slice(2).join('/');
 
+        if (request.method === 'POST') {
+            if (!rest.startsWith('__rafflex/actions/')) {
+                send(response, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
+
+                return;
+            }
+
+            if (!isAuthorisedAction(request)) {
+                send(response, 403, 'This action needs the app\'s start token.');
+
+                return;
+            }
+
+            serveProductAction(product, rest.slice('__rafflex/actions/'.length), response);
+
+            return;
+        }
+
+        if (rest.startsWith(resultsRoutePrefix)) {
+            serveResult(product, rest.slice(resultsRoutePrefix.length), response);
+
+            return;
+        }
+
         switch (rest) {
             case '':
-                serveClient('index.html', response);
+                serveClient('app.html', response);
+
+                return;
+            case '__rafflex/product':
+                await serveProductDetail(product, response);
 
                 return;
             case 'frame':
@@ -679,7 +1024,7 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
 
                 return;
             case '__rafflex/problems':
-                serveProblems(product, url, response).catch(() => send(response, 500, 'The check failed.'));
+                await serveProblems(product, url, response);
 
                 return;
             case '__rafflex/events':
@@ -697,7 +1042,11 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
         }
     };
 
-    const server = createServer((request, response) => {
+    /**
+     * @param {import('node:http').IncomingMessage} request
+     * @param {import('node:http').ServerResponse} response
+     */
+    const handle = async (request, response) => {
         const hostHeader = request.headers.host ?? '';
 
         if (hostHeader !== `${host}:${actualPort}` && hostHeader !== `localhost:${actualPort}`) {
@@ -706,54 +1055,82 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
             return;
         }
 
-        if (request.method !== 'GET' && request.method !== 'HEAD') {
-            send(response, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
+        if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'POST') {
+            send(response, 405, 'Method not allowed', { Allow: 'GET, HEAD, POST' });
 
             return;
         }
 
         const url = new URL(request.url ?? '/', origin);
 
-        try {
-            if (url.pathname === '/') {
-                serveClient('workspace.html', response);
+        if (url.pathname.startsWith(productRoutePrefix)) {
+            await serveProductRoute(url, request, response);
 
-                return;
-            }
-
-            if (url.pathname.startsWith(productRoutePrefix)) {
-                serveProductRoute(url, response);
-
-                return;
-            }
-
-            const clientFile = url.pathname.startsWith('/__rafflex/') ? url.pathname.slice('/__rafflex/'.length) : null;
-
-            if (clientFile !== null && clientFiles.includes(clientFile)) {
-                serveClient(clientFile, response);
-
-                return;
-            }
-
-            switch (url.pathname) {
-                case '/__rafflex/alpine.js':
-                    send(response, 200, readFileSync(alpinePath, 'utf8'), { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'max-age=3600' });
-
-                    return;
-                case '/__rafflex/products':
-                    serveProducts(response);
-
-                    return;
-                case '/__rafflex/events':
-                    serveEvents(null, response);
-
-                    return;
-                default:
-                    send(response, 404, 'Not found');
-            }
-        } catch (error) {
-            send(response, 500, String(/** @type {Error} */ (error).message));
+            return;
         }
+
+        if (request.method === 'POST') {
+            if (url.pathname !== '/__rafflex/actions/new') {
+                send(response, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
+
+                return;
+            }
+
+            if (!isAuthorisedAction(request)) {
+                send(response, 403, 'This action needs the app\'s start token.');
+
+                return;
+            }
+
+            await serveNewProduct(request, response);
+
+            return;
+        }
+
+        if (appPages.includes(url.pathname)) {
+            serveClient('app.html', response);
+
+            return;
+        }
+
+        const clientFile = url.pathname.startsWith('/__rafflex/') ? url.pathname.slice('/__rafflex/'.length) : null;
+
+        if (clientFile !== null && clientFiles.includes(clientFile)) {
+            serveClient(clientFile, response);
+
+            return;
+        }
+
+        switch (url.pathname) {
+            case '/__rafflex/alpine.js':
+                send(response, 200, readFileSync(alpinePath, 'utf8'), { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'max-age=3600' });
+
+                return;
+            case '/__rafflex/products':
+                serveProducts(response);
+
+                return;
+            case '/__rafflex/home':
+                await serveHome(url, response);
+
+                return;
+            case '/__rafflex/events':
+                serveEvents(null, response);
+
+                return;
+            default:
+                send(response, 404, 'Not found');
+        }
+    };
+
+    const server = createServer((request, response) => {
+        handle(request, response).catch((error) => {
+            if (!response.headersSent) {
+                send(response, 500, String(/** @type {Error} */ (error).message));
+            } else {
+                response.end();
+            }
+        });
     });
 
     actualPort = await listenOnFreePort(server, host, port);
@@ -792,9 +1169,11 @@ export async function startDevServer({ workspace, loaded, port, host = '127.0.0.
         port: actualPort,
         urlFor: (product) => `${origin}${productBasePath(product)}`,
         notifyChange,
+        token,
         close: () => new Promise((resolveClose) => {
             clearInterval(keepAlive);
             stopWatching();
+            runner.stopAll();
 
             for (const listener of listeners.keys()) {
                 listener.end();
@@ -841,4 +1220,45 @@ function listenOnFreePort(server, host, port) {
 
         attempt();
     });
+}
+
+/**
+ * The file a URL encoded path names inside `root`, or null when it is
+ * not a file there: it must decode, resolve inside `root` after following
+ * links, and (unless allowed) not pass through a hidden name.
+ *
+ * @param {string} root
+ * @param {string} rawPath
+ * @param {{allowHidden?: boolean}} [options]
+ * @returns {string|null}
+ */
+export function confinedPath(root, rawPath, { allowHidden = false } = {}) {
+    let decoded;
+
+    try {
+        decoded = decodeURIComponent(rawPath);
+    } catch {
+        return null;
+    }
+
+    if (decoded.includes('\0')) {
+        return null;
+    }
+
+    const base = resolve(root);
+    const path = resolve(base, decoded);
+
+    if (!path.startsWith(`${base}${sep}`)) {
+        return null;
+    }
+
+    if (!allowHidden && relative(base, path).split(sep).some((part) => part.startsWith('.'))) {
+        return null;
+    }
+
+    if (!existsSync(path) || !statSync(path).isFile() || !isInside(base, path)) {
+        return null;
+    }
+
+    return path;
 }
