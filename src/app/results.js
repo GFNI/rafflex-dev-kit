@@ -13,10 +13,13 @@ import { isBlocking } from '../checker.js';
 export const resultsDirectoryName = '.results';
 
 /** Written by the app after a run when the command left no result of its own. */
-export const appResultFilename = 'last-run.json';
+export const appResultFilename = 'app-run.json';
 
-/** The result files the app reads, newest first by modification time. */
-export const resultFilenames = ['verify.json', 'last-run.json', 'results.json'];
+/**
+ * The result files the app reads, newest first by modification time:
+ * verify's full result, test's last run (PRD 41), and the app's own.
+ */
+export const resultFilenames = ['verify.json', 'last-run.json', appResultFilename];
 
 export const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
 
@@ -117,9 +120,13 @@ function normaliseIssue(issue) {
  */
 function resultsRelative(productDirectory, path) {
     const resultsDirectory = join(productDirectory, resultsDirectoryName);
+    const segments = path.split(/[\\/]/);
+    const resultsIndex = segments.indexOf(resultsDirectoryName);
+    // Paths may be relative to the workspace ("games/x/.results/a.png"),
+    // the product (".results/a.png"), or the results folder ("a.png").
     const absolute = isAbsolute(path)
         ? path
-        : path.split(/[\\/]/)[0] === resultsDirectoryName ? join(productDirectory, path) : join(resultsDirectory, path);
+        : resultsIndex === -1 ? join(resultsDirectory, path) : join(resultsDirectory, ...segments.slice(resultsIndex + 1));
     const inside = relative(resultsDirectory, absolute);
 
     if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
@@ -246,7 +253,13 @@ function normalisePlaythrough(scenario, entry) {
         return null;
     }
 
-    const rawPlays = Array.isArray(entry.plays) ? entry.plays : Array.isArray(entry.results) ? entry.results : [];
+    const rawPlays = Array.isArray(entry.plays)
+        ? entry.plays
+        : Array.isArray(entry.results)
+            ? entry.results
+            : Array.isArray(entry.expected)
+                ? entry.expected.map((expected, index) => ({ expected, actual: Array.isArray(entry.revealed) ? entry.revealed[index] ?? null : null }))
+                : [];
     const plays = rawPlays.filter(isObject).map((play, index) => {
         const expected = resultText(play.expected);
         const actual = resultText(play.actual ?? play.revealed ?? play.result);
@@ -298,7 +311,7 @@ function notesOf(part) {
     /** @type {string[]} */
     const notes = [];
 
-    for (const key of ['skipped', 'skipped_reason', 'note', 'notes']) {
+    for (const key of ['skipped', 'skipped_reason', 'notes']) {
         const value = part[key];
 
         if (typeof value === 'string' && value !== '') {
@@ -306,7 +319,7 @@ function notesOf(part) {
         } else if (Array.isArray(value)) {
             notes.push(...value.filter((note) => typeof note === 'string'));
         } else if (value === true && key === 'skipped') {
-            notes.push('Browser tests skipped.');
+            notes.push(typeof part.reason === 'string' && part.reason !== '' ? part.reason : 'Browser tests skipped.');
         }
     }
 
@@ -353,7 +366,7 @@ export function normaliseResult(json, { productDirectory, at = null, source = nu
             }
         }
 
-        for (const raw of Array.isArray(part.screenshots) ? part.screenshots : []) {
+        for (const raw of [...(Array.isArray(part.screenshots) ? part.screenshots : []), ...(Array.isArray(part.runs) ? part.runs : [])]) {
             const screenshot = normaliseScreenshot(productDirectory, raw);
 
             if (screenshot !== null) {
@@ -386,7 +399,7 @@ export function normaliseResult(json, { productDirectory, at = null, source = nu
     const blocking = all.filter((issue) => issue.blocking);
     const error = typeof json.error === 'string' ? json.error : null;
     const failedPlaythrough = [...playthroughs.values()].some((playthrough) => !playthrough.passed);
-    const passed = error === null && blocking.length === 0 && !failedPlaythrough && json.passed !== false;
+    const passed = error === null && blocking.length === 0 && !failedPlaythrough && json.passed !== false && json.ready !== false;
 
     return {
         status: error !== null && all.length === 0 ? 'error' : passed ? 'passed' : 'issues',

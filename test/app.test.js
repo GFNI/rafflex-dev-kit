@@ -320,7 +320,7 @@ describe('the app on localhost', () => {
         const results = join(root, 'games', 'brand-new', '.results');
 
         assert.equal(readFileSync(join(results, '.gitignore'), 'utf8'), '*\n');
-        assert.equal(JSON.parse(readFileSync(join(results, 'last-run.json'), 'utf8')).source, 'check');
+        assert.equal(JSON.parse(readFileSync(join(results, 'app-run.json'), 'utf8')).source, 'check');
 
         const detail = (await send(`${server.url}p/games/brand-new/__rafflex/product`)).json();
         const products = (await send(`${server.url}__rafflex/products`)).json().products;

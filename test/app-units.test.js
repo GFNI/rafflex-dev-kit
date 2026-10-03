@@ -104,6 +104,36 @@ describe('test results', () => {
         }]);
     });
 
+    test('reads the verify result shape of PRD 41: ready, runs, workspace relative screenshots, and playthrough records', () => {
+        const directory = temporaryProduct();
+        const result = normaliseResult({
+            product: 'games/spin-to-win',
+            ready: false,
+            browser_tests: 'failed',
+            format: { product: 'games/spin-to-win', changed: false },
+            check: { product: 'games/spin-to-win', passed: true, issues: [] },
+            test: {
+                passed: false,
+                skipped: false,
+                issues: [{ code: 'playthrough_mismatch', message: 'Play 2 revealed lose', fix: 'Reveal the decided result', scenario: 'mixed', screenshot: 'games/spin-to-win/.results/screenshots/mixed-play.png' }],
+                runs: [{ scenario: 'mixed', device: 'phone', width: 390, screenshot: 'games/spin-to-win/.results/screenshots/mixed-phone.png' }],
+                playthrough: [{ scenario: 'mixed', expected: ['win', 'win'], revealed: ['win', 'lose'], passed: false }],
+            },
+            issues: [{ code: 'playthrough_mismatch', message: 'Play 2 revealed lose', fix: 'Reveal the decided result', scenario: 'mixed', screenshot: 'games/spin-to-win/.results/screenshots/mixed-play.png' }],
+            blocking: 1,
+            warnings: 0,
+        }, { productDirectory: directory });
+
+        assert.equal(result.status, 'issues');
+        assert.equal(result.blocking.length, 1);
+        assert.deepEqual(result.screenshots.map((shot) => [shot.path, shot.scenario, shot.device]), [
+            ['screenshots/mixed-play.png', 'mixed', null],
+            ['screenshots/mixed-phone.png', 'mixed', 'phone'],
+        ]);
+        assert.deepEqual(result.playthrough[0].plays, [{ number: 1, expected: 'win', actual: 'win', passed: true }, { number: 2, expected: 'win', actual: 'lose', passed: false }]);
+        assert.equal(normaliseResult({ ready: false, test: { skipped: true, reason: 'Playwright is not installed, so the browser tests were skipped.' }, issues: [] }, { productDirectory: directory }).notes[0], 'Playwright is not installed, so the browser tests were skipped.');
+    });
+
     test('reads check output, notes skipped browser tests, and finds screenshots on disk', () => {
         const directory = temporaryProduct();
 
