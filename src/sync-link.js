@@ -333,7 +333,7 @@ export function refusalFrom(response) {
     }
 
     if (status === 413) {
-        return new SyncLinkError('too_large', `${message ?? 'The push was not applied, because its body is larger than the marketplace reads in one push.'} Push less at once: files already go through upload links, so template.twig, options.json, or listing.md is far larger than any real one (most often an image or sound pasted into it as data). Move that file into assets/ and use it through files['<tag>'], run npx @rafflex/dev verify, then push again.`, { exitCode: 1, status });
+        return new SyncLinkError('too_large', `${message ?? 'The push was not applied, because its body is larger than the marketplace reads in one push.'} Push less at once: template.twig, options.json, or listing.md is far larger than any real one, most often because an image or sound is pasted into it as data. Move that file into assets/, use it through files['<tag>'], run npx @rafflex/dev verify, then push again.`, { exitCode: 1, status });
     }
 
     if (status === 429) {
