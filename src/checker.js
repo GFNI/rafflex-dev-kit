@@ -4,6 +4,7 @@ import { gameTwigLogicIssues, playthroughHookIssues } from './game-rules.js';
 import { scriptViolations, sourceScriptViolations } from './script-rules.js';
 import { compileTemplate, lineAt, renderTemplate, TemplateRenderError } from './twig-engine.js';
 import { lintTemplate } from './twig-lint.js';
+import { optionWarningIssues } from './options/check.js';
 
 /**
  * The kit's version of the marketplace's template check (PRD 34's
@@ -210,7 +211,7 @@ export function runChecks(input) {
         safetyIssues.push(...renderedIssues({ template, files, contexts, rules, scenarios, patterns, isApprovedUrl, playCount, templateName, mode: input.renderedPlayCounts ?? 'all', issue, renderFailureMessages }));
     }
 
-    issues.push(...safetyIssues, ...renderFailures, ...extraLintIssues(template, rules, issue), ...unknownTagIssues(template, files, issue));
+    issues.push(...safetyIssues, ...renderFailures, ...optionWarningIssues(template, documents), ...extraLintIssues(template, rules, issue), ...unknownTagIssues(template, files, issue));
 
     if (input.type === 'game') {
         issues.push(...[...gameTwigLogicIssues(template, rules.game_rules), ...playthroughHookIssues(template, rules.game_rules)].map((found) => issue(found)));

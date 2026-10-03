@@ -73,6 +73,7 @@ describe('plan', () => {
                     { key: 'screenshots', message: 'Add at least one screenshot before submitting for review.', fix: 'npx @rafflex/dev capture spin-to-win' },
                 ],
             },
+            suggested_version: null,
         });
 
         const human = await run(['plan'], { cwd: directory, baseUrl: marketplace.baseUrl });
