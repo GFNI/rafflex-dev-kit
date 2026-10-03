@@ -20,11 +20,11 @@ import { fail, messageOf, writeJson } from './output.js';
  */
 export async function assetDocuments(workspace) {
     try {
-        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl, names: ['rules', 'libraries', 'categories'] });
+        const loaded = await loadDocuments({ workspaceDirectory: workspace.root, baseUrl: workspace.baseUrl, names: ['rules', 'libraries', 'categories', 'contexts'] });
 
         return { documents: loaded.documents, warnings: loaded.warnings };
     } catch (error) {
-        const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories']);
+        const { documents } = readCachedDocuments(workspace.root, workspace.baseUrl, ['rules', 'libraries', 'categories', 'contexts']);
 
         return { documents, warnings: [`Could not load the platform's upload rules (${messageOf(error)}); assets are tagged by filename and approved libraries are not recognised.`] };
     }
@@ -34,7 +34,7 @@ export async function assetDocuments(workspace) {
  * The push plan for a product, in the contract's `plan --json` shape.
  *
  * @param {import('../workspace.js').Product} product
- * @param {{rules?: any, libraries?: any, categories?: any}} documents
+ * @param {{rules?: any, libraries?: any, categories?: any, contexts?: any}} documents
  * @param {number} [now]
  */
 export function buildPlan(product, documents, now = Date.now()) {
@@ -93,7 +93,7 @@ export function buildPlan(product, documents, now = Date.now()) {
             listing_images: listingImages,
             refusals: locked,
             submission: submissionStatus(product, documents, local),
-            suggested_version: suggestedVersionFor(product, local.template.text),
+            suggested_version: suggestedVersionFor(product, local.template.text, documents.contexts),
         },
         refusals: local.refusals,
     };

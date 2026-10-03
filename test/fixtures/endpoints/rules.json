@@ -1,5 +1,5 @@
 {
-    "version": "25eb8113e2d6",
+    "version": "e7e71953ec6d",
     "sandbox": {
         "tags": [
             "if",
@@ -473,6 +473,15 @@
             "flags": "",
             "js_compatible": true
         },
+        "filename_pattern": {
+            "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+            "flags": "",
+            "js_compatible": true
+        },
+        "max_filename_length": 255,
+        "library_capacity_bytes": 26214400,
+        "max_files_per_batch": 10,
+        "max_description_length": 160,
         "refusals": {
             "blend": "Browsers cannot load .blend files. Export from Blender as .glb (File > Export > glTF 2.0, format glTF Binary).",
             "gltf": "Upload a single .glb instead: .gltf files reference separate files the files map cannot express.",
@@ -490,16 +499,7 @@
             "invalid_filename": "Use letters, numbers, dots, hyphens, and underscores only in file names.",
             "over_capacity": "This media library is full (maximum 25 MB).",
             "locked": ":filename is referenced by a submitted or published version and cannot be overwritten. Upload it under a new name."
-        },
-        "filename_pattern": {
-            "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*$",
-            "flags": "",
-            "js_compatible": true
-        },
-        "max_filename_length": 255,
-        "library_capacity_bytes": 26214400,
-        "max_files_per_batch": 10,
-        "max_description_length": 160
+        }
     },
     "preview_csp": {
         "sandbox": [
@@ -591,7 +591,6 @@
             },
             "screenshot": {
                 "max_bytes": 2097152,
-                "max_count": 6,
                 "extensions": [
                     "jpg",
                     "jpeg",
@@ -620,7 +619,8 @@
                     "image/heic-sequence",
                     "image/heif",
                     "image/heif-sequence"
-                ]
+                ],
+                "max_count": 6
             }
         }
     },
