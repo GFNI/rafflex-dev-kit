@@ -296,6 +296,46 @@ describe('the checklist and the new checks through the CLI', () => {
         assert.deepEqual(broken.output.issues.filter((/** @type {any} */ issue) => issue.code === 'listing_invalid').map((/** @type {any} */ issue) => [issue.file, issue.message]), [['listing.md', "listing.md's category_ids list is not closed with ]."]]);
     });
 
+    test('a product whose state never recorded its listing images says to refresh it, and plans and captures none', async () => {
+        const text = listing(`category_ids: [${firstCategory.id}]`);
+        const root = temporaryWorkspace({
+            products: [
+                { title: 'Spin to Win', slug: 'spin-to-win', version: '1.1.0', template, listing: text, remote: syncedRemote(text) },
+                { title: 'Known None', slug: 'known-none', version: '1.1.0', template, listing: text, remote: syncedRemote(text, { listing_images: { cover: null, screenshots: [] } }) },
+            ],
+        });
+        const refresh = 'The marketplace may already have a cover and screenshots: this product\'s state was recorded without them (by an older kit). Refresh it first: call request_sync with slug spin-to-win, then run npx @rafflex/dev synced spin-to-win "<sync_url>".';
+        const unknown = selectProduct(loadWorkspace(root), 'spin-to-win', root);
+        const known = selectProduct(loadWorkspace(root), 'known-none', root);
+
+        const images = (/** @type {import('../src/submission.js').MissingRequirement[]} */ missing) => missing.filter((entry) => entry.key === 'cover_image' || entry.key === 'screenshots');
+
+        assert.deepEqual(images(submissionStatus(unknown, { rules, categories }).missing), [
+            { key: 'cover_image', message: `${messages.cover_image} ${refresh}`, fix: 'npx @rafflex/dev synced spin-to-win "<sync_url>"' },
+            { key: 'screenshots', message: `${messages.screenshots} ${refresh}`, fix: 'npx @rafflex/dev synced spin-to-win "<sync_url>"' },
+        ]);
+        assert.deepEqual(images(submissionStatus(known, { rules, categories }).missing).map((entry) => entry.fix), ['npx @rafflex/dev capture known-none', 'npx @rafflex/dev capture known-none']);
+
+        const capture = await runJson(['capture', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+
+        assert.equal(capture.code, 0);
+        assert.equal(capture.output.skipped, true);
+        assert.deepEqual(capture.output.captured, []);
+        assert.match(capture.output.reason, /^Nothing was captured\. The marketplace may already have a cover and screenshots.+capture spin-to-win --force to make them anyway\.$/);
+
+        for (const slug of ['spin-to-win', 'known-none']) {
+            addListingImages(join(root, 'games', slug), { 'cover.png': png('cover'), 'screenshots/01.png': png('one') });
+        }
+
+        const unknownPlan = await runJson(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl });
+        const knownPlan = await runJson(['plan', 'known-none'], { cwd: root, baseUrl: marketplace.baseUrl });
+
+        assert.deepEqual(unknownPlan.output.listing_images, { cover: null, screenshots: [], removed_screenshots: [], remote_unknown: true });
+        assert.match((await run(['plan', 'spin-to-win'], { cwd: root, baseUrl: marketplace.baseUrl })).stdout, /Listing images are not planned: the recorded state does not say which the marketplace has\./);
+        assert.equal(knownPlan.output.listing_images.cover.path, 'listing/cover.png');
+        assert.deepEqual(knownPlan.output.listing_images.screenshots.map((/** @type {any} */ image) => image.path), ['listing/screenshots/01.png']);
+    });
+
     test('check blocks a cover or screenshot whose file name the upload refuses, with the name to use', async () => {
         const root = temporaryWorkspace({ products: [{ title: 'Spin to Win', template, listing: listing(`category_ids: [${firstCategory.id}]`) }] });
 

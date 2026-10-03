@@ -43,7 +43,7 @@ describe('synced', () => {
             revision: 7,
             submitted: false,
             template_sha256: templateHash(spin.draft.template),
-            option_overrides_sha256: optionOverridesHash(spin.draft.option_overrides),
+            option_overrides_sha256: optionOverridesHash(spin.draft.option_overrides, spin.draft.template),
         });
         assert.equal(written.remote.live_version, '1.2.0');
         assert.equal(written.remote.live_channel, 'stable');
